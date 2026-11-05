@@ -17,7 +17,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 SLOTS = [(6, 0), (18, 0)]
 STORY_HOUR = 6
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "20"))
-MAX_QUEUE = int(os.environ.get("MAX_QUEUE", "60"))
+MAX_QUEUE = int(os.environ.get("MAX_QUEUE", "100000"))  # no practical limit
 RELEASE = "queue"
 STATE, QUEUE = "state.json", "queue.json"
 REPLIES = [
