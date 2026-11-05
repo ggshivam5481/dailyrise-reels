@@ -2,12 +2,14 @@ name: post-reel
 
 on:
   schedule:
-    # GitHub often starts scheduled runs late, so try 4 times around each slot.
-    # The first run posts the due reel; later runs find nothing due and exit.
-    - cron: "20,35,50 0 * * *"   # 05:50 / 06:05 / 06:20 IST
-    - cron: "5 1 * * *"          # 06:35 IST
-    - cron: "20,35,50 12 * * *"  # 17:50 / 18:05 / 18:20 IST
-    - cron: "5 13 * * *"         # 18:35 IST
+    # Start ~45 min early and wait inside the job until the exact slot (GitHub cron is often late).
+    # Backup runs post immediately if the first one was dropped; they exit if the reel is already posted.
+    - cron: "15 0 * * *"    # 05:45 IST -> waits, posts at 06:00
+    - cron: "40 0 * * *"    # 06:10 IST backup
+    - cron: "10 1 * * *"    # 06:40 IST backup
+    - cron: "15 12 * * *"   # 17:45 IST -> waits, posts at 18:00
+    - cron: "40 12 * * *"   # 18:10 IST backup
+    - cron: "10 13 * * *"   # 18:40 IST backup
   workflow_dispatch:
 
 permissions:
@@ -20,7 +22,7 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
     steps:

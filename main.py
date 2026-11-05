@@ -11,6 +11,7 @@ import os
 import random
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -191,6 +192,11 @@ def post():
     e = min(due, key=lambda x: x["slot"])
     os.makedirs("out", exist_ok=True)
     gh("release", "download", RELEASE, "-p", e["file"], "-D", "out", "--clobber")
+    # The run starts early on purpose (GitHub cron is often late): wait for the exact slot time.
+    wait = (datetime.fromisoformat(e["slot"]) - datetime.now(IST)).total_seconds() - 60  # upload takes ~1 min
+    if wait > 0:
+        print(f"waiting {int(wait)} s for the {e['slot']} slot")
+        time.sleep(wait)
     final = os.path.join("out", e["file"])
     thumb = e.get("thumb")
     if thumb is None:  # older queue entries without a built-in hook cover
