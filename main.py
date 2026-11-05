@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 IST = timezone(timedelta(hours=5, minutes=30))
 SLOTS = [(6, 0), (18, 0)]
 STORY_HOUR = 6
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "20"))
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "35"))
 MAX_QUEUE = int(os.environ.get("MAX_QUEUE", "100000"))  # no practical limit
 RELEASE = "queue"
 STATE, QUEUE = "state.json", "queue.json"
@@ -79,7 +79,15 @@ def make_spec(F, used, rnd, last):
     name = rnd.choices(names, weights=[FORMAT_WEIGHTS.get(n, 1) for n in names])[0]
     import hooks
     import nv
-    spec = F[name]["make"](rnd, used)
+    for _try in range(40):  # same on-screen script (top + punch) must not repeat while fresh ones exist
+        snap = set(used)
+        spec = F[name]["make"](rnd, used)
+        text_key = "script|" + str(spec.get("top")) + "|" + str(spec.get("punch"))
+        if text_key not in used:
+            break
+        used.clear()
+        used.update(snap)
+    used.add(text_key)
     spec["format"] = name
     spec["hook"], spec["hook_style"] = hooks.pick(rnd, used, spec.get("topic"))
     last_theme = getattr(make_spec, "last_theme", None)
