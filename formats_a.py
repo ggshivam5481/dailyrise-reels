@@ -442,25 +442,6 @@ def _events_plant(spec):
     return ev + _decor_events(spec, win) + [(win + 0.4, "swell", 0.5)]
 
 
-def make_duel(rnd, used):
-    bank = DUEL + DUEL2
-    order = list(range(len(bank)))
-    rnd.shuffle(order)
-    for _ in range(4):
-        for i in order:
-            v = rnd.randrange(10)
-            key = f"a2|duel|{i}|{v}"
-            if key in used:
-                continue
-            used.add(key)
-            a, b, var, top, punch, cap, ig, topic, ua, ub = bank[i]
-            dur = 12.0 + (v % 3) * 0.6
-            return dict(format="duel", key=key, dur=dur, top=top, punch=punch, punch_at=0.7, caption_line=cap,
-                        ig=ig, topic=topic, a=a, b=b, variant=var, ua=ua, ub=ub, flip=v % 2 == 1,
-                        n=5 + (v // 2) % 2, start=1 + (v // 4))
-    raise RuntimeError("duel scripts exhausted")
-
-
 # ---------- duel: STACK ----------
 BW, BHT = 70, 50
 
@@ -814,24 +795,6 @@ SPLIT2 = [
 ]
 
 
-def make_split(rnd, used):
-    bank = SPLIT + SPLIT2
-    order = list(range(len(bank)))
-    rnd.shuffle(order)
-    for _ in range(4):
-        for i in order:
-            v = rnd.randrange(6)
-            key = f"a2|split|{i}|{v}"
-            if key in used:
-                continue
-            used.add(key)
-            tl, ta, bl, ba, ck, rt, rb, punch, cap, ig, topic = bank[i]
-            return dict(format="split", key=key, dur=11.5 + (v % 3) * 0.5, top=None, punch=punch, punch_at=0.7,
-                        caption_line=cap, ig=ig, topic=topic, tl=tl, ta=ta, bl=bl, ba=ba, ck=ck, rt=rt, rb=rb,
-                        flip=v % 2 == 1)
-    raise RuntimeError("split scripts exhausted")
-
-
 def _act(c, kind, x, foot, t, s, col, prog, beats=()):
     """Draw one panel's action with coloured props. prog 0..1 grows the panel's progress prop."""
     nb = sum(1 for b in beats if t >= b)
@@ -989,6 +952,431 @@ def events_split(spec):
     ev += [(res, "riser", 0.6), (res, "impact", 0.6), (res + 0.02, "flash", 0.9), (res + 0.12, "chime", 1.0),
            (res + 0.45, "rumble", 0.45), (res + 0.6, "heartbeat", 0.45), (res + 0.3, "pop", 0.5)]
     return ev
+
+
+# ---------------- round 3: big script banks ----------------
+# Each theme = one scene variant + topic + sub-label units + label pairs that fit + hand-written lines.
+# Every (pair x line) reads naturally because pairs and lines in a theme share one idea.
+# line = (top, punch, caption_line, ig)
+DUEL3 = [
+    dict(var="stack", topic="discipline", units=("DAY", "DAY"),
+         pairs=[("MOTIVATED", "DISCIPLINED"), ("EXCUSE MAKER", "NO EXCUSES"), ("SOMETIMES", "EVERY DAY")],
+         lines=[
+             ("MOTIVATION LEAVES. HABITS STAY.", "BUILD ON BAD DAYS TOO.",
+              "Motivation gets you started. Discipline gets you finished.", "Mood se nahi, routine se kaam hota hai."),
+             ("ONE WAITS FOR THE MOOD.", "THE OTHER NEVER ASKS.",
+              "Discipline doesn't ask how you feel.", "Mann ho ya na ho, kaam roz hona chahiye."),
+             ("TIRED IS NOT A STOP SIGN.", "SHOW UP ANYWAY.",
+              "Tired days count double.", "Thak gaye ho? Phir bhi ek eent lagao."),
+             ("NO ONE IS WATCHING.", "THAT'S WHEN IT COUNTS.",
+              "Who you are when no one watches decides everything.", "Jab koi nahi dekh raha, tab asli mehnat hoti hai."),
+             ("RAIN OR SHINE.", "THE WALL STILL GROWS.",
+              "Consistency doesn't check the weather.", "Mausam kaisa bhi ho, kaam rukna nahi chahiye."),
+             ("FEELINGS ARE NOT A PLAN.", "A SCHEDULE IS.",
+              "Put it on the calendar, not on your mood.", "Feeling pe nahi, schedule pe chalo."),
+             ("THE BORING PART IS THE PART.", "REPEAT IT.",
+              "Success is mostly boring repetition.", "Boring kaam hi asli kaam hai."),
+             ("SAME 24 HOURS.", "DIFFERENT STANDARDS.",
+              "Your standards decide your results.", "Ghante sabke same, standard alag."),
+             ("YOU DON'T RISE TO GOALS.", "YOU FALL TO HABITS.",
+              "You fall to the level of your systems.", "Goal nahi, aadat tumhe upar le jaati hai."),
+             ("DO IT ON DAY 1.", "DO IT ON DAY 100.",
+              "Day 100 needs the same effort as day 1.", "Pehle din jaisa josh, sauve din bhi."),
+         ]),
+    dict(var="stack", topic="habits", units=("TRY", "DAY"),
+         pairs=[("ALL OR NOTHING", "1% DAILY"), ("BIG BURSTS", "SMALL STEPS"), ("RESTARTER", "STREAK KEEPER")],
+         lines=[
+             ("ONE GOES BIG. ONE GOES DAILY.", "DAILY WINS.",
+              "Small daily beats big occasional.", "Bada kabhi kabhi nahi, chhota roz."),
+             ("STARTING OVER AGAIN?", "STOP RESTARTING. CONTINUE.",
+              "Never miss twice. Just continue.", "Phir se shuru mat karo, bas continue karo."),
+             ("1% BETTER EVERY DAY.", "37 TIMES BETTER IN A YEAR.",
+              "Tiny gains compound into massive change.", "Roz 1% better, saal mein 37 guna."),
+             ("SMALL IS NOT SLOW.", "SMALL IS SUSTAINABLE.",
+              "Small habits survive bad weeks.", "Chhoti aadat bure din bhi chalti hai."),
+             ("TWO MINUTES IS ENOUGH.", "TO NOT BREAK THE CHAIN.",
+              "Make it so small you can't say no.", "Itna chhota karo ki mana na kar sako."),
+             ("MONDAY PLANS. FRIDAY QUITS.", "BE THE ONE ON SUNDAY TOO.",
+              "Real habits don't care what day it is.", "Habit mein Monday Sunday nahi hota."),
+             ("INTENSITY FADES.", "CONSISTENCY COMPOUNDS.",
+              "Consistency beats intensity every single time.", "Josh khatam hota hai, aadat chalti rehti hai."),
+             ("NOBODY SEES BRICK 50.", "EVERYONE SEES THE HOUSE.",
+              "People see results, never the reps.", "Log ghar dekhte hain, eentein nahi."),
+             ("A STREAK IS A PROMISE.", "KEEP IT TODAY.",
+              "Every day you show up is a promise kept.", "Streak ek vaada hai, aaj bhi nibhao."),
+             ("GO HARD FOR A WEEK?", "OR GO STEADY FOR A YEAR?",
+              "A steady year beats a crazy week.", "Ek hafte ka josh ya saal bhar ki aadat?"),
+         ]),
+    dict(var="dig", topic="mindset", units=("DEPTH", "DEPTH"),
+         pairs=[("QUITTER", "PERSISTER"), ("DOUBTER", "BELIEVER"), ("IMPATIENT", "PATIENT")],
+         lines=[
+             ("ONE MORE SWING.", "THAT'S THE DIFFERENCE.",
+              "Most people quit right before it works.", "Bas ek aur koshish ka farak hai."),
+             ("IT'S NOT WORKING?", "YOU'RE CLOSER THAN IT LOOKS.",
+              "Progress is invisible until it isn't.", "Dikh nahi raha, par tum kareeb ho."),
+             ("THEY STOPPED AT 5.", "GOLD WAS AT 6.",
+              "Gold is often one meter deeper.", "Sona bas ek haath neeche tha."),
+             ("NO RESULTS YET?", "ROOTS GROW FIRST.",
+              "Silent progress is still progress.", "Result pehle neeche banta hai, phir dikhta hai."),
+             ("DOUBT DIGS SHALLOW.", "BELIEF DIGS DEEP.",
+              "Your belief decides how deep you go.", "Yakeen jitna gehra, result utna bada."),
+             ("SAME TOOLS. SAME GROUND.", "DIFFERENT PATIENCE.",
+              "Patience is the hidden skill.", "Auzaar same, sabr alag."),
+             ("THE HARDEST PART", "IS RIGHT BEFORE THE GOLD.",
+              "The wall you hit is the last layer.", "Sabse mushkil waqt jeet se theek pehle aata hai."),
+             ("QUITTING FEELS LIKE RELIEF.", "FOR A DAY.",
+              "Quitting is easy relief and long regret.", "Chhodna aaj aasaan, kal pachtawa."),
+             ("THEY CALLED IT LUCK.", "IT WAS ONE MORE DAY.",
+              "Luck is what persistence looks like from outside.", "Log luck kahenge, tum jaante ho mehnat thi."),
+             ("KEEP DIGGING.", "QUIETLY.",
+              "Work in silence. Let the gold talk.", "Chup chaap khodte raho."),
+         ]),
+    dict(var="climb", topic="fear", units=("SCROLL", "STEP"),
+         pairs=[("SCARED", "BRAVE"), ("AFRAID", "BOLD"), ("COMFORT", "COURAGE")],
+         lines=[
+             ("FEAR KEEPS YOU SAFE.", "AND STUCK.",
+              "Safe and stuck often look the same.", "Dar tumhe safe rakhta hai, aur wahin rok deta hai."),
+             ("WHAT IF YOU FALL?", "WHAT IF YOU FLY?",
+              "Ask the other what-if.", "Girne ka socha, udne ka bhi socho."),
+             ("THE LADDER IS SCARY.", "THE GROUND IS SCARIER.",
+              "Staying stuck is the bigger risk.", "Wahi ruke rehna sabse bada risk hai."),
+             ("FIRST STEP SHAKES.", "TENTH STEP DOESN'T.",
+              "Courage grows one step at a time.", "Pehla kadam kaanpta hai, dasvan nahi."),
+             ("THEY WILL JUDGE.", "FROM THE BOTTOM.",
+              "Critics rarely climb.", "Judge karne wale neeche hi rehte hain."),
+             ("READY IS A FEELING.", "IT COMES AFTER YOU START.",
+              "Confidence comes after action, not before.", "Confidence kaam ke baad aata hai."),
+             ("SCARED AND DOING IT", "IS STILL DOING IT.",
+              "Brave is scared and moving.", "Darr ke bhi karna, karna hi hai."),
+             ("ONE SCROLLS ABOUT CLIMBERS.", "ONE CLIMBS.",
+              "Stop watching others live your dream.", "Doosron ko dekhna band, khud chadho."),
+             ("THE VIEW IS UP THERE.", "NOT IN YOUR FEED.",
+              "Your life is not on the screen.", "Asli nazara screen pe nahi, upar hai."),
+             ("COMFORT IS A SOFT CAGE.", "CLIMB OUT.",
+              "Comfort zones become cages.", "Comfort zone ek naram pinjra hai."),
+         ]),
+    dict(var="money", topic="money", units=("RS", "RS"),
+         pairs=[("SPENDER", "SAVER"), ("EMI LIFE", "DEBT FREE"), ("TRENDY", "WEALTHY")],
+         lines=[
+             ("SAME INCOME.", "DIFFERENT FUTURE.",
+              "It's not your salary. It's your habits.", "Salary same, aadatein alag, future alag."),
+             ("THE NEW PHONE CAN WAIT.", "YOUR FREEDOM CAN'T.",
+              "Every purchase is a trade with your future.", "Har kharcha future se ek sauda hai."),
+             ("PAY YOURSELF FIRST.", "THEN PAY THE WORLD.",
+              "Save before you spend, not after.", "Pehle bachao, phir kharcho."),
+             ("RICH ON INSTAGRAM.", "BROKE ON THE 20TH.",
+              "Looking rich is the fastest way to stay broke.", "Insta pe ameer, mahine ke end mein khaali."),
+             ("EVERY RUPEE IS A WORKER.", "SEND IT TO WORK.",
+              "Money should work for you, not leave you.", "Paise ko kaam pe lagao, udao mat."),
+             ("SALE! 50% OFF!", "100% UNNECESSARY.",
+              "A discount on what you don't need isn't saving.", "Jo chahiye hi nahi, wo sasta bhi mehenga hai."),
+             ("SMALL LEAKS", "SINK BIG SHIPS.",
+              "Little daily spends add up fast.", "Chhote kharche bada nuksaan karte hain."),
+             ("THEY BOUGHT ASSETS.", "YOU BOUGHT ATTENTION.",
+              "Buy things that pay you back.", "Wo cheez kharido jo paisa wapas laaye."),
+             ("EMI TODAY.", "STRESS FOR YEARS.",
+              "Debt borrows peace from your future.", "EMI aaj aaram, saalon tension."),
+             ("BORING MONEY", "BUILDS EXCITING LIVES.",
+              "Boring saving creates exciting freedom.", "Boring bachat, mazedaar zindagi."),
+         ]),
+    dict(var="gym", topic="habits", units=("EPISODE", "REP"),
+         pairs=[("COUCH", "GYM"), ("TOMORROW", "TODAY"), ("LAZY", "CONSISTENT")],
+         lines=[
+             ("ONE MORE EPISODE?", "ONE MORE REP.",
+              "Your body keeps score of your choices.", "Ek aur episode ya ek aur rep?"),
+             ("YOUR BODY HEARS", "EVERYTHING YOU DO.",
+              "Every choice shows up in your body.", "Body sab yaad rakhti hai."),
+             ("SORE TODAY.", "STRONG TOMORROW.",
+              "Discomfort today is strength tomorrow.", "Aaj dard, kal taakat."),
+             ("NO GYM? NO PROBLEM.", "NO EXCUSE EITHER.",
+              "You don't need a gym to move.", "Gym nahi to kya, floor to hai."),
+             ("SNACKS OR SETS?", "CHOOSE YOUR SHAPE.",
+              "Your plate and your plan decide your shape.", "Snack ya set, shape tum chunte ho."),
+             ("20 MINUTES A DAY.", "NEW BODY IN A YEAR.",
+              "Twenty minutes a day is enough to change.", "Roz 20 minute, saal mein naya tum."),
+             ("SKIPPED AGAIN?", "THE WEIGHTS DON'T JUDGE.",
+              "Come back. The bar is still waiting.", "Wapas aao, weights wait kar rahe hain."),
+             ("ENERGY IS NOT FOUND.", "IT IS BUILT.",
+              "Moving creates the energy you're waiting for.", "Energy milti nahi, banti hai."),
+             ("REMOTE IN HAND.", "OR WEIGHT IN HAND.",
+              "What's in your hand decides your health.", "Haath mein remote ya weight?"),
+             ("STRONG IS A HABIT.", "NOT A GIFT.",
+              "Strength is built rep by rep.", "Taakat gift nahi, aadat hai."),
+         ]),
+    dict(var="read", topic="focus", units=("REEL", "PAGE"),
+         pairs=[("SCROLLER", "READER"), ("DISTRACTED", "FOCUSED"), ("CONSUMER", "LEARNER")],
+         lines=[
+             ("100 REELS OR 10 PAGES?", "ONLY ONE STAYS WITH YOU.",
+              "You forget reels. You keep ideas.", "Reels bhool jaoge, kitaab yaad rahegi."),
+             ("YOUR ATTENTION IS MONEY.", "WHO ARE YOU PAYING?",
+              "Where attention goes, life follows.", "Dhyan jahan jaata hai, zindagi wahin jaati hai."),
+             ("ONE FEEDS THE FEED.", "ONE FEEDS THE MIND.",
+              "Feed your mind, not the algorithm.", "Algorithm ko nahi, dimaag ko khilao."),
+             ("FOCUS IS A MUSCLE.", "SCROLLING IS THE COUCH.",
+              "Train your focus like a muscle.", "Focus bhi muscle hai, train karo."),
+             ("THE PHONE BUZZES.", "THE BOOK WAITS.",
+              "Silence the noise. Keep the page.", "Phone bajta hai, kitaab intezaar karti hai."),
+             ("SAME HOUR.", "ONE GOT SMARTER.",
+              "An hour of reading changes you. An hour of scrolling doesn't.", "Ek ghanta, do alag nateeje."),
+             ("BUSY ISN'T PRODUCTIVE.", "FOCUSED IS.",
+              "Motion is not progress.", "Busy dikhna aur kaam karna alag hai."),
+             ("NOTIFICATIONS", "ARE OTHER PEOPLE'S PRIORITIES.",
+              "Turn off what doesn't serve you.", "Notification doosron ki priority hai."),
+             ("DEEP WORK FEELS SLOW.", "THEN IT FEELS LIKE MAGIC.",
+              "Deep focus compounds faster than you think.", "Gehra kaam dheema lagta hai, phir jaadu."),
+             ("READ TO LEAD.", "SCROLL TO FOLLOW.",
+              "Leaders read. Followers scroll.", "Padhne wale lead karte hain."),
+         ]),
+    dict(var="plant", topic="time", units=("WEEK", "WEEK"),
+         pairs=[("IMPATIENT", "PATIENT"), ("NEGLECT", "NURTURE"), ("SHORTCUT", "PROCESS")],
+         lines=[
+             ("GOOD THINGS TAKE TIME.", "SO START TODAY.",
+              "The best time to plant was yesterday. Next is now.", "Achhi cheezon mein time lagta hai, aaj shuru karo."),
+             ("NOTHING FOR 8 WEEKS.", "THEN EVERYTHING.",
+              "Growth is quiet before it's loud.", "Pehle kuch nahi dikhta, phir sab dikhta hai."),
+             ("TIME PASSES ANYWAY.", "WHAT ARE YOU GROWING?",
+              "A year will pass either way.", "Time to guzrega hi, kya ugaa rahe ho?"),
+             ("WATER IT DAILY.", "EVEN WHEN NOTHING SHOWS.",
+              "Faith is watering what you can't see yet.", "Roz paani do, chahe kuch na dikhe."),
+             ("SHORTCUTS GROW WEEDS.", "PATIENCE GROWS FRUIT.",
+              "Real growth has no shortcut.", "Shortcut se ghaas ugti hai, phal nahi."),
+             ("ONE YEAR FROM NOW", "YOU'LL WISH YOU STARTED.",
+              "Future you is begging you to start.", "Ek saal baad pachtaoge, aaj shuru karo."),
+             ("YOU CAN'T RUSH A TREE.", "YOU CAN ONLY FEED IT.",
+              "Feed the process. Forget the clock.", "Ped jaldi nahi badhta, bas paani do."),
+             ("SAME SEED.", "DIFFERENT CARE.",
+              "Care decides what grows.", "Beej same, dekhbhaal alag."),
+             ("FORGOT FOR A MONTH?", "IT FORGOT YOU TOO.",
+              "What you ignore fades away.", "Jise bhool jaoge, wo bhi tumhe bhool jayega."),
+             ("SLOW IS STILL GROWING.", "STOPPED IS NOT.",
+              "Slow progress beats no progress.", "Dheere badhna bhi badhna hai."),
+         ]),
+    dict(var="climb", topic="growth", units=("SCROLL", "STEP"),
+         pairs=[("STUCK", "GROWING"), ("SAME OLD", "NEW YOU"), ("SPECTATOR", "PLAYER")],
+         lines=[
+             ("SAME PLACE AS LAST YEAR?", "TAKE ONE STEP.",
+              "Growth starts with one uncomfortable step.", "Pichle saal wahi? Ek kadam lo."),
+             ("ONE WATCHES.", "ONE BECOMES.",
+              "Stop watching. Start becoming.", "Dekhne wale dekhte reh jaate hain."),
+             ("EVERY STEP IS A VERSION", "OF A BETTER YOU.",
+              "Each step upgrades who you are.", "Har kadam ek naya tum."),
+             ("THE TOP ISN'T LUCK.", "IT'S RUNG BY RUNG.",
+              "Success is climbed, not gifted.", "Top tak luck nahi, kadam le jaate hain."),
+             ("OUTGROW YOUR OLD SELF.", "QUIETLY.",
+              "Let your growth surprise them.", "Chup chaap purane khud se aage niklo."),
+             ("THE FEED SHOWS THEIR TOP.", "NOT THEIR LADDER.",
+              "Don't compare your step 1 to their step 100.", "Unka top dikhta hai, seedhi nahi."),
+             ("NEW LEVEL.", "NEW YOU.",
+              "Every level needs a new version of you.", "Naya level, naya tum."),
+             ("GROWTH IS UNCOMFORTABLE.", "SO IS REGRET.",
+              "Pick the discomfort that pays.", "Growth bhi takleef hai, pachtawa bhi."),
+             ("STOP WATCHING HIGHLIGHTS.", "START BUILDING YOURS.",
+              "Make your own highlight reel.", "Doosron ke highlights chhodo, apne banao."),
+             ("A YEAR OF STEPS", "CHANGES WHO YOU ARE.",
+              "One year of steps makes a new person.", "Ek saal ke kadam tumhe badal dete hain."),
+         ]),
+]
+
+# split: label set = (top label, top action, bottom label, bottom action, top result, bottom result)
+# line = (punch, caption_line, ig)
+SPLIT3 = [
+    dict(topic="habits", cks=("clock", "days"),
+         sets=[("WAKE AT 6", "pushup", "WAKE AT 9", "snooze", "AHEAD", "BEHIND"),
+               ("MORNING RUN", "run", "MORNING SCROLL", "scroll", "ENERGIZED", "DRAINED"),
+               ("STRETCH 10 MIN", "meditate", "SNOOZE 10 MIN", "snooze", "FRESH", "GROGGY")],
+         lines=[
+             ("THE MORNING DECIDES THE DAY.", "How you start is how you go.", "Subah jaisi, din waisa."),
+             ("FIRST HOUR. WHOLE LIFE.", "Your first hour shapes your whole life.", "Pehla ghanta poori zindagi banata hai."),
+             ("EARLY IS A SUPERPOWER.", "Quiet mornings are the real head start.", "Jaldi uthna superpower hai."),
+             ("SAME ALARM. DIFFERENT CHOICE.", "The alarm is the first choice of the day.", "Alarm same, faisla alag."),
+             ("WIN BEFORE 7 AM.", "Get one win before the world wakes up.", "Duniya uthe usse pehle ek jeet."),
+             ("THE SNOOZE BUTTON STEALS YEARS.", "Ten minutes a day is sixty hours a year.", "Snooze button saal chura leta hai."),
+             ("RISE. MOVE. REPEAT.", "Simple mornings build strong lives.", "Utho, chalo, repeat karo."),
+             ("YOUR BED WON'T BUILD YOUR DREAMS.", "Dreams are built awake.", "Bistar sapne poore nahi karega."),
+             ("SUNRISE OR SCREEN?", "Start with the sky, not the screen.", "Suraj dekho, screen nahi."),
+             ("OWN THE MORNING. OWN THE DAY.", "Control the morning, control the day.", "Subah tumhari, din tumhara."),
+         ]),
+    dict(topic="focus", cks=("min", "days"),
+         sets=[("PHONE AWAY", "read", "PHONE IN HAND", "scroll", "FOCUSED", "SCATTERED"),
+               ("DEEP WORK", "laptop", "BUSY WORK", "scroll", "DONE", "STILL BUSY"),
+               ("ONE TASK", "laptop", "TEN TABS", "game", "FINISHED", "STUCK")],
+         lines=[
+             ("ATTENTION IS THE NEW WEALTH.", "Protect your attention like money.", "Dhyan hi asli daulat hai."),
+             ("ONE THING AT A TIME.", "Multitasking is just switching fast and failing slow.", "Ek waqt pe ek kaam."),
+             ("SILENCE IS PRODUCTIVE.", "Turn off the noise, turn on the work.", "Shor band, kaam shuru."),
+             ("25 MINUTES OF FOCUS.", "Short focused blocks beat long distracted days.", "25 minute ka focus, ghanton ka kaam."),
+             ("DISTRACTION IS EXPENSIVE.", "Every ping costs you twenty minutes.", "Har notification mehenga padta hai."),
+             ("FINISH WHAT YOU START.", "Done is better than ten things half done.", "Shuru kiya hai to khatam karo."),
+             ("FOCUS IS A FILTER.", "Saying no is how focus works.", "Focus matlab baaki sab ko na."),
+             ("THE PHONE CAN WAIT.", "Nothing on it is more urgent than your future.", "Phone ruk sakta hai, future nahi."),
+             ("DEEP BEATS BUSY.", "Be deep, not just busy.", "Busy nahi, gehra kaam karo."),
+             ("PROTECT YOUR PEAK HOURS.", "Give your best hours to your best work.", "Best ghante best kaam ko do."),
+         ]),
+    dict(topic="money", cks=("weeks", "years"),
+         sets=[("INVEST 500", "save", "SPEND 500", "spend", "GROWING", "GONE"),
+               ("PACK LUNCH", "salad", "ORDER LUNCH", "junk", "SAVED", "SPENT"),
+               ("NEEDS", "save", "WANTS", "spend", "SECURE", "BROKE")],
+         lines=[
+             ("SMALL MONEY. BIG HABIT.", "The habit matters more than the amount.", "Amount chhota, aadat badi."),
+             ("TIME IN THE MARKET WINS.", "Start early and let time do the work.", "Jaldi shuru karo, time kaam karega."),
+             ("SPEND LESS THAN YOU EARN.", "The oldest wealth rule still works.", "Kamaai se kam kharcho."),
+             ("WANTS KEEP YOU BROKE.", "Needs keep you alive. Wants keep you broke.", "Zaroorat aur shauk mein farak samjho."),
+             ("COMPOUND INTEREST IS PATIENT.", "Patient money grows. Impatient money goes.", "Sabr wala paisa badhta hai."),
+             ("TRACK EVERY RUPEE.", "What you track, you control.", "Har rupaye ka hisaab rakho."),
+             ("YOUR FUTURE SELF SAYS THANKS.", "Saving is a gift to future you.", "Future wala tum shukriya kahega."),
+             ("FREEDOM HAS A PRICE TAG.", "Each saved rupee buys a piece of freedom.", "Azaadi bhi paise se khareedi jaati hai."),
+             ("DELIVERY APPS LOVE YOU.", "Your wallet doesn't.", "Delivery app khush, wallet dukhi."),
+             ("CHOOSE ASSETS OVER APPEARANCES.", "Buy what grows, not what shows.", "Dikhawa nahi, asset kharido."),
+         ]),
+    dict(topic="growth", cks=("days", "weeks"),
+         sets=[("LEARN A SKILL", "laptop", "WATCH SERIES", "game", "VALUABLE", "SAME"),
+               ("READ 20 MIN", "read", "SCROLL 20 MIN", "scroll", "WISER", "EMPTY"),
+               ("JOURNAL", "read", "OVERTHINK", "couch", "CLEAR", "FOGGY")],
+         lines=[
+             ("INVEST IN YOUR HEAD.", "Knowledge pays the best interest.", "Dimaag mein invest karo."),
+             ("BE 1% SMARTER DAILY.", "Tiny learning becomes huge knowledge.", "Roz thoda smart bano."),
+             ("ENTERTAINMENT OR EDUCATION?", "One fills time, one fills your future.", "Mazaa ya seekh?"),
+             ("SKILLS PAY BILLS.", "Learn what the world will pay for.", "Skill se bill bharte hain."),
+             ("THE BEST UPGRADE IS YOU.", "No phone upgrade beats a self upgrade.", "Sabse best upgrade tum khud ho."),
+             ("WRITE IT DOWN. CLEAR IT OUT.", "Paper is cheaper than therapy.", "Likh do, halka ho jao."),
+             ("WHO WILL YOU BE IN A YEAR?", "Your daily input decides your yearly output.", "Ek saal baad kaun banoge?"),
+             ("LEARN WHILE OTHERS RELAX.", "The gap is built in free time.", "Jab sab aaram karein, tum seekho."),
+             ("GROWTH IS A DAILY CHOICE.", "Choose growth one evening at a time.", "Growth roz ka faisla hai."),
+             ("OUTGROW, DON'T OUTRUN.", "Grow past your problems.", "Problem se bhaago mat, unse bade bano."),
+         ]),
+    dict(topic="discipline", cks=("days", "weeks"),
+         sets=[("TRAIN", "lift", "SKIP", "couch", "STRONG", "WEAK"),
+               ("10 PUSHUPS", "pushup", "10 EXCUSES", "couch", "FIT", "SOFT"),
+               ("SHOW UP", "run", "SHOW OFF", "scroll", "RESULTS", "LIKES")],
+         lines=[
+             ("DISCIPLINE IS SELF RESPECT.", "Keeping promises to yourself is respect.", "Discipline khud ki izzat hai."),
+             ("EXCUSES DON'T BURN CALORIES.", "Only reps do.", "Bahane calorie nahi jalate."),
+             ("HARD NOW. EASY LATER.", "Choose your hard.", "Abhi mushkil, baad mein aasaan."),
+             ("DO IT EVEN WHEN YOU DON'T.", "Especially when you don't feel like it.", "Mann na ho tab bhi karo."),
+             ("NOBODY CARES. WORK HARDER.", "The world rewards results, not feelings.", "Kisi ko farak nahi, aur mehnat karo."),
+             ("RESULTS LOVE REPETITION.", "Repeat the boring thing.", "Result ko repetition pasand hai."),
+             ("SWEAT NOW. SHINE LATER.", "Today's sweat is tomorrow's shine.", "Aaj pasina, kal chamak."),
+             ("DISCIPLINE BEATS TALENT.", "Talent without work is wasted.", "Mehnat talent ko hara deti hai."),
+             ("NO ZERO DAYS.", "Do something, even small, every day.", "Koi din zero nahi."),
+             ("KEEP THE PROMISE.", "The promise you make to yourself matters most.", "Khud se kiya vaada nibhao."),
+         ]),
+    dict(topic="time", cks=("clocknight", "years"),
+         sets=[("SLEEP AT 10", "meditate", "SCROLL TILL 2", "scroll", "RESTED", "WRECKED"),
+               ("PLAN TOMORROW", "read", "WING IT", "game", "READY", "LOST"),
+               ("ONE HOUR SKILL", "laptop", "ONE HOUR GAMING", "game", "YEAR AHEAD", "YEAR LOST")],
+         lines=[
+             ("NIGHTS DECIDE MORNINGS.", "A good morning starts the night before.", "Raat tay karti hai subah kaisi hogi."),
+             ("WHERE DID THE YEAR GO?", "Into the hours you didn't plan.", "Saal kahan gaya? Bina plan ke ghanton mein."),
+             ("TIME IS THE ONLY REAL CURRENCY.", "Spend hours like they're money. They are.", "Time hi asli currency hai."),
+             ("LATE NIGHTS. LOST DAYS.", "Sleep is not a waste of time.", "Der raat, bekaar din."),
+             ("365 HOURS A YEAR.", "One hour a day is fifteen full days.", "Roz ek ghanta, saal mein 15 din."),
+             ("YOU CAN'T BUY BACK TODAY.", "Today is the only day you can use.", "Aaj wapas nahi milega."),
+             ("PLAN THE DAY OR IT PLANS YOU.", "No plan is a plan to drift.", "Din plan karo warna din tumhe chalaega."),
+             ("THE CLOCK DOESN'T PAUSE.", "Neither should your progress.", "Ghadi nahi rukti."),
+             ("BEDTIME IS A DECISION.", "Your sleep is your first habit.", "Sone ka time bhi faisla hai."),
+             ("SPEND TIME. DON'T KILL IT.", "Killing time is killing your future.", "Time pass mat karo, time use karo."),
+         ]),
+    dict(topic="mindset", cks=("days", "weeks"),
+         sets=[("GRATEFUL", "meditate", "COMPLAINING", "scroll", "PEACE", "STRESS"),
+               ("CALM", "meditate", "REACTIVE", "game", "STEADY", "DRAINED"),
+               ("LEARN FROM IT", "read", "BLAME OTHERS", "couch", "WISER", "STUCK")],
+         lines=[
+             ("YOUR THOUGHTS BECOME YOUR DAYS.", "Guard your thoughts. They become your life.", "Soch jaisi, din waise."),
+             ("SAME PROBLEM. DIFFERENT LENS.", "Perspective changes everything.", "Problem same, nazariya alag."),
+             ("PEACE IS A PRACTICE.", "Calm is trained, not given.", "Shanti practice se aati hai."),
+             ("RESPOND. DON'T REACT.", "Pause before you react.", "React nahi, respond karo."),
+             ("COMPLAINING IS FREE.", "And it pays nothing.", "Shikayat free hai, par kuch nahi deti."),
+             ("GRATITUDE CHANGES THE VIEW.", "Count what you have before what you don't.", "Jo hai uska shukar karo."),
+             ("YOU CONTROL ONE THING.", "Your response.", "Bas apna jawab tumhare haath mein hai."),
+             ("BLAME KEEPS YOU STUCK.", "Responsibility sets you free.", "Blame se aage nahi badhte."),
+             ("A CALM MIND WINS.", "Calm minds make better decisions.", "Shaant dimaag jeet ta hai."),
+             ("CHANGE THE STORY YOU TELL.", "Your inner story shapes your outer life.", "Apni kahaani badlo."),
+         ]),
+    dict(topic="fear", cks=("days", "weeks"),
+         sets=[("TRY & FAIL", "run", "NEVER TRY", "couch", "LEARNED", "WONDERING"),
+               ("POST IT", "laptop", "HIDE IT", "scroll", "SEEN", "INVISIBLE"),
+               ("ASK", "walk", "ASSUME", "couch", "ANSWERS", "DOUBTS")],
+         lines=[
+             ("FAILURE TEACHES. FEAR DOESN'T.", "You learn more from trying than from waiting.", "Haar sikhati hai, dar nahi."),
+             ("WHAT'S THE WORST THAT HAPPENS?", "Usually, you learn something.", "Sabse bura kya hoga? Kuch seekhoge."),
+             ("REGRET LASTS LONGER.", "Than any rejection ever will.", "Pachtawa rejection se zyada chubhta hai."),
+             ("NOBODY IS THINKING ABOUT YOU.", "So go ahead and try.", "Koi tumhare baare mein itna nahi sochta."),
+             ("CRINGE TODAY. PROUD LATER.", "Your first attempts are supposed to be bad.", "Aaj cringe, kal proud."),
+             ("FEAR IS A BAD ADVISOR.", "Don't let fear make your choices.", "Dar se faisle mat lo."),
+             ("DO IT SCARED.", "Waiting to be fearless means waiting forever.", "Darr ke bhi kar do."),
+             ("THE ANSWER IS NO UNTIL YOU ASK.", "Ask. The worst answer is the one you already have.",
+              "Poochoge nahi to jawab hamesha na hai."),
+             ("TRY BAD. THEN TRY BETTER.", "Every expert started badly.", "Pehle bura, phir behtar."),
+             ("COMFORT IS EXPENSIVE.", "It costs you every chance you skip.", "Comfort sabse mehenga hai."),
+         ]),
+]
+
+
+def _duel_candidates():
+    out = []
+    for i, row in enumerate(DUEL + DUEL2):
+        a, b, var, top, punch, cap, ig, topic, ua, ub = row
+        out.append((f"a2|duel|{i}", dict(a=a, b=b, variant=var, top=top, punch=punch, caption_line=cap, ig=ig,
+                                          topic=topic, ua=ua, ub=ub)))
+    for ti, th in enumerate(DUEL3):
+        for pi, (a, b) in enumerate(th["pairs"]):
+            for li, (top, punch, cap, ig) in enumerate(th["lines"]):
+                out.append((f"a3|duel|{ti}|{pi}|{li}",
+                            dict(a=a, b=b, variant=th["var"], top=top, punch=punch, caption_line=cap, ig=ig,
+                                 topic=th["topic"], ua=th["units"][0], ub=th["units"][1])))
+    return out
+
+
+def _split_candidates():
+    out = []
+    for i, row in enumerate(SPLIT + SPLIT2):
+        tl, ta, bl, ba, ck, rt, rb, punch, cap, ig, topic = row
+        out.append((f"a2|split|{i}", dict(tl=tl, ta=ta, bl=bl, ba=ba, ck=ck, rt=rt, rb=rb, punch=punch,
+                                           caption_line=cap, ig=ig, topic=topic)))
+    for ti, th in enumerate(SPLIT3):
+        for si, (tl, ta, bl, ba, rt, rb) in enumerate(th["sets"]):
+            for li, (punch, cap, ig) in enumerate(th["lines"]):
+                out.append((f"a3|split|{ti}|{si}|{li}",
+                            dict(tl=tl, ta=ta, bl=bl, ba=ba, ck=th["cks"][(si + li) % len(th["cks"])], rt=rt, rb=rb,
+                                 punch=punch, caption_line=cap, ig=ig, topic=th["topic"])))
+    return out
+
+
+_CAND = {}
+
+
+def _pick(name, builder, rnd, used, line_of):
+    """Unused script first; among those, prefer ones whose top/punch line hasn't been shown yet."""
+    if name not in _CAND:
+        _CAND[name] = builder()
+    allc = _CAND[name]
+    fresh = [c for c in allc if c[0] not in used]
+    best = [c for c in fresh if line_of(c[1]) not in used] or fresh or allc
+    base, f = rnd.choice(best)
+    used.add(base)
+    used.add(line_of(f))
+    return base, dict(f)
+
+
+def make_duel(rnd, used):
+    base, f = _pick("duel", _duel_candidates, rnd, used, lambda f: f"a3line|duel|{f['top']}|{f['punch']}")
+    v = rnd.randrange(10)
+    key = f"{base}|{v}"
+    used.add(key)
+    spec = dict(format="duel", key=key, dur=12.0 + (v % 3) * 0.6, punch_at=0.7, flip=v % 2 == 1,
+                n=5 + (v // 2) % 2, start=1 + (v // 4), **f)
+    spec["script_text"] = "|".join([f["top"], f["punch"], f["a"], f["b"], f["ua"], f["ub"], f["variant"]])
+    return spec
+
+
+def make_split(rnd, used):
+    base, f = _pick("split", _split_candidates, rnd, used, lambda f: f"a3line|split|{f['punch']}")
+    v = rnd.randrange(6)
+    key = f"{base}|{v}"
+    used.add(key)
+    spec = dict(format="split", key=key, dur=11.5 + (v % 3) * 0.5, top=None, punch_at=0.7, flip=v % 2 == 1, **f)
+    spec["script_text"] = "|".join([f["punch"], f["tl"], f["bl"], f["rt"], f["rb"], f["ck"]])
+    return spec
 
 
 FORMATS = {

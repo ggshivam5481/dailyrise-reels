@@ -422,86 +422,240 @@ TOP_Y = 270          # statement line
 PUNCH_GAP = 18
 
 
-HOOK_DUR = 1.6
+HOOK_DUR = 1.8
+HOOK_STYLES = ["pop", "type", "slide", "shake", "flash", "zoom", "glitch", "drop"]
+KICKERS = ["WAIT...", "READ THIS.", "STOP.", "LISTEN.", "TRUTH:", "1% ONLY", "BE HONEST.", "REAL TALK."]
 
 
 def _hook_tokens(text):
-    out = []
+    """Words with accent flag; *several words* marks a whole span."""
+    out, inside = [], False
     for w_ in text.split():
+        starts = w_.startswith("*")
         core = w_.rstrip(".,!?")
-        out.append((w_.replace("*", "").upper(), core.startswith("*") or core.endswith("*")))
+        ends = core.endswith("*") and (len(core) > 1 or not starts)
+        acc = inside or starts
+        out.append((w_.replace("*", "").upper(), acc))
+        if starts and not ends:
+            inside = True
+        if ends:
+            inside = False
     return out
 
 
-def draw_hook(img, t, text, style):
-    """Big hook card over the dimmed opening scene. Returns new image."""
+def _scaled_mask(s, px, scale):
+    m = text_mask(s, px)
+    if abs(scale - 1) < 0.02:
+        return m
+    return m.resize((max(1, int(m.width * scale)), max(1, int(m.height * scale))), Image.NEAREST)
+
+
+def draw_hook(img, t, text, style, kicker=None):
+    """Big catchy hook over the dimmed, zooming opening scene. Returns new image."""
     if t >= HOOK_DUR:
         return img
     fade = 1 - clamp((t - (HOOK_DUR - 0.25)) / 0.25)
-    dim = Image.new("RGB", (W, H), (0, 0, 0))
-    img = Image.blend(img, dim, 0.62 * fade)
+    img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.6 * fade)
+    d = ImageDraw.Draw(img)
     toks = _hook_tokens(text)
-    px = 50 if len(" ".join(w for w, _ in toks)) < 26 else 42
+    px = 58 if len(" ".join(w for w, _ in toks)) < 22 else (50 if len(" ".join(w for w, _ in toks)) < 34 else 42)
     lines, cur, curw = [], [], 0
     for w_, acc in toks:
         ww = text_mask(w_, px).width + px
-        if cur and curw + ww > 940:
+        if cur and curw + ww > 960:
             lines.append(cur)
             cur, curw = [], 0
         cur.append((w_, acc))
         curw += ww
     if cur:
         lines.append(cur)
-    lh = px * 1.7
-    y0 = 860 - len(lines) * lh / 2
+    lh = px * 1.75
+    y0 = 880 - len(lines) * lh / 2
+    scale = 1.0
     if style == "slide":
-        y0 += 160 * (1 - ease(t / 0.35))
+        y0 += 180 * (1 - ease(t / 0.35))
+    if style == "drop":
+        y0 -= 500 * (1 - ease(t / 0.3)) - 25 * math.sin(clamp((t - 0.3) / 0.25) * math.pi)
+    if style == "zoom":
+        scale = 1 + 0.45 * (1 - ease(t / 0.25))
     shake = 0
-    if style == "shake" and t < 0.35:
-        shake = math.sin(t * 90) * 18 * (1 - t / 0.35)
+    if style in ("shake", "glitch") and t < 0.4:
+        shake = math.sin(t * 90) * 20 * (1 - t / 0.4)
     nwords = sum(len(l) for l in lines)
     total_chars = sum(len(w_) for l in lines for w_, _ in l)
     shown_words = nwords if style != "pop" else int(clamp(t / 0.6) * nwords) + 1
     shown_chars = total_chars if style != "type" else int(clamp(t / 0.7) * total_chars) + 1
+    # accent bar behind the hook for punch
+    bar_w = 980 * ease(t / 0.25)
+    bar_col = mix((0, 0, 0), mix(T["bg_top"], (0, 0, 0), 0.2), fade)
+    d.rectangle([W / 2 - bar_w / 2, y0 - 40, W / 2 + bar_w / 2, y0 + len(lines) * lh + 10], fill=bar_col)
+    d.rectangle([W / 2 - bar_w / 2, y0 - 40, W / 2 + bar_w / 2, y0 - 34], fill=mix((0, 0, 0), T["accent"], fade))
+    if kicker:
+        km = text_mask(kicker, 26)
+        kc = mix((0, 0, 0), T["accent"], fade * (0.6 + 0.4 * math.sin(t * 12) ** 2))
+        img.paste(kc, (int(W / 2 - km.width / 2), int(y0 - 100)), km)
     k = 0
     chars = 0
     for li, line in enumerate(lines):
-        widths = [text_mask(w_, px).width for w_, _ in line]
-        x = W / 2 - (sum(widths) + px * 0.6 * (len(line) - 1)) / 2 + shake
-        for (w_, acc), ww in zip(line, widths):
+        masks = [_scaled_mask(w_, px, scale) for w_, _ in line]
+        gap = px * 0.6 * scale
+        x = W / 2 - (sum(m.width for m in masks) + gap * (len(line) - 1)) / 2 + shake
+        yy = y0 + li * lh - (masks[0].height - text_mask(line[0][0], px).height) / 2
+        for (w_, acc), m in zip(line, masks):
             k += 1
             if k > shown_words:
                 break
-            vis = w_
             if style == "type":
                 left = shown_chars - chars
                 if left <= 0:
                     break
-                vis = w_[:left]
+                m = text_mask(w_[:left], px)
             chars += len(w_)
             col = T["accent"] if acc else WHITE
-            if fade < 1:
-                col = mix((0, 0, 0), col, fade)
-            img.paste(col, (int(x), int(y0 + li * lh)), text_mask(vis, px))
-            x += ww + px * 0.6
-    if style == "flash" and t < 0.15:
-        img = Image.blend(img, Image.new("RGB", (W, H), (255, 255, 255)), 0.7 * (1 - t / 0.15))
+            col = mix((0, 0, 0), col, fade)
+            if style == "glitch" and t < 0.5:
+                img.paste(mix((0, 0, 0), (255, 40, 80), fade), (int(x - 8), int(yy)), m)
+                img.paste(mix((0, 0, 0), (40, 220, 255), fade), (int(x + 8), int(yy)), m)
+            img.paste(col, (int(x), int(yy)), m)
+            x += m.width + gap
+    if style in ("flash", "zoom", "drop") and t < 0.15:
+        img = Image.blend(img, Image.new("RGB", (W, H), (255, 255, 255)), 0.6 * (1 - t / 0.15))
     return img
 
 
 def hook_sfx(style, n_words):
-    ev = [(0.0, "impact", 1.0), (0.0, "whoosh", 0.8), (HOOK_DUR - 0.12, "whoosh", 0.7)]
+    ev = [(0.0, "impact", 1.0), (0.0, "whoosh", 0.8), (0.05, "riser", 0.0), (HOOK_DUR - 0.12, "whoosh", 0.8)]
     if style == "pop":
-        ev += [(i * 0.6 / max(1, n_words), "pop", 0.7) for i in range(n_words)]
+        ev += [(i * 0.6 / max(1, n_words), "pop", 0.8) for i in range(n_words)]
     elif style == "type":
-        ev += [(i * 0.1, "pop", 0.35) for i in range(7)]
-    elif style == "shake":
-        ev += [(0.02, "snap", 0.9), (0.4, "heartbeat", 0.8)]
+        ev += [(i * 0.1, "pop", 0.4) for i in range(7)]
+    elif style in ("shake", "glitch"):
+        ev += [(0.02, "snap", 1.0), (0.45, "heartbeat", 0.9)]
     elif style == "slide":
-        ev += [(0.05, "swell", 0.6)]
-    elif style == "flash":
+        ev += [(0.05, "swell", 0.7)]
+    elif style in ("flash", "zoom"):
         ev += [(0.0, "flash", 1.0)]
+    elif style == "drop":
+        ev += [(0.3, "thud", 1.0)]
     return ev
+
+
+# ---------------- global animation layers (applied to every reel) ----------------
+BEAT_KINDS = {"pop", "thud", "step", "impact", "snap", "chime", "flash"}
+
+
+def _beat_times(ev):
+    return sorted({round(e[0], 2) for e in ev if e[1] in BEAT_KINDS})
+
+
+def camera(img, t, dur, shakes, punch_t):
+    """Slow push-in (starts zoomed during the hook), beat bumps, and shake on impacts."""
+    z = 1.0 + 0.05 * ease(t / dur)
+    if t < HOOK_DUR:
+        z += 0.12 * (1 - ease(t / HOOK_DUR))
+    if 0 <= t - punch_t < 0.3:
+        z += 0.05 * (1 - (t - punch_t) / 0.3)
+    dx = dy = 0.0
+    for st, strength in shakes:
+        a = t - st
+        if 0 <= a < 0.3:
+            k = (1 - a / 0.3) ** 2 * strength
+            dx += math.sin(a * 91.0 + st * 7) * 22 * k
+            dy += math.cos(a * 77.0 + st * 3) * 16 * k
+    dx += 6 * math.sin(t * 0.7)
+    cw, ch = W / z, H / z
+    x0 = min(max((W - cw) / 2 + dx, 0), W - cw)
+    y0 = min(max((H - ch) / 2 + dy, 0), H - ch)
+    return img.resize((W, H), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch))
+
+
+def ripples(img, t, beats, seed):
+    """Light rings spreading on the floor at every beat."""
+    d = ImageDraw.Draw(img)
+    for i, bt in enumerate(beats):
+        a = t - bt
+        if 0 <= a < 0.7:
+            k = a / 0.7
+            x = W * (0.3 + 0.4 * ((i * 0.618 + seed * 0.13) % 1))
+            rx, ry = 40 + 260 * k, 8 + 40 * k
+            col = mix(T["bg_bot"], T["accent2"], 0.9 * (1 - k))
+            d.ellipse([x - rx, FLOOR - ry + 10, x + rx, FLOOR + ry + 10], outline=col, width=3)
+    return img
+
+
+_sweep_m = None
+
+
+def light_sweep(img, t):
+    """A soft diagonal light band crossing the frame every 5 s."""
+    global _sweep_m
+    ph = (t % 5.0) / 1.2
+    if ph > 1:
+        return img
+    if _sweep_m is None:
+        m = Image.new("L", (W // 4, H // 4), 0)
+        ImageDraw.Draw(m).polygon([(0, 0), (60, 0), (W // 4 - 200, H // 4), (W // 4 - 260, H // 4)], fill=46)
+        _sweep_m = m.filter(ImageFilter.GaussianBlur(14)).resize((W, H))
+    x = int(-W + 2 * W * ease(ph))
+    m = Image.new("L", (W, H), 0)
+    m.paste(_sweep_m, (x, 0))
+    img.paste(mix(T["spot"], (255, 255, 255), 0.5), (0, 0), m)
+    return img
+
+
+def shooting_stars(img, t, seed):
+    d = ImageDraw.Draw(img)
+    for i in range(2):
+        period = 3.3 + i * 1.7
+        a = ((t + i * 1.1 + seed * 0.37) % period) / 0.6
+        if a > 1:
+            continue
+        x0 = W * ((0.2 + 0.5 * ((seed + i) * 0.618 % 1)))
+        y0 = 120 + 160 * i
+        x, y = x0 + 520 * a, y0 + 200 * a
+        for j in range(10):
+            f = j / 10
+            d.line([(x - 26 * j, y - 10 * j), (x - 26 * (j + 1), y - 10 * (j + 1))],
+                   fill=mix(T["bg_top"], (255, 255, 255), 1 - f), width=3)
+    return img
+
+
+def vignette_pulse(img, t, beats):
+    """Edges breathe darker, and briefly brighten on beats."""
+    k = 0.0
+    for bt in beats:
+        if 0 <= t - bt < 0.25:
+            k = max(k, 1 - (t - bt) / 0.25)
+    if k > 0:
+        img = Image.blend(img, Image.new("RGB", (W, H), T["accent2"]), 0.06 * k)
+    return img
+
+
+def progress_bar(img, t, dur):
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W, 7], fill=(20, 20, 24))
+    d.rectangle([0, 0, int(W * t / dur), 7], fill=T["accent"])
+    return img
+
+
+def confetti_burst(img, t, at, seed):
+    """Coloured confetti falling after the punchline."""
+    a = t - at
+    if a < 0 or a > 2.5:
+        return img
+    d = ImageDraw.Draw(img)
+    cols = [T["accent"], T["accent2"], GOLD, (255, 255, 255), T["spot"]]
+    for i in range(46):
+        r = (i * 0.618 + seed * 0.1) % 1
+        x = W * r + math.sin(a * 3 + i) * 40
+        y = 160 + a * (420 + 260 * ((i * 0.37) % 1)) - 120 * math.sin(i)
+        if y > FLOOR:
+            continue
+        w_ = 8 + (i % 3) * 4
+        ang = a * 8 + i
+        dx, dy = math.cos(ang) * w_, math.sin(ang) * w_ / 2
+        d.polygon([(x - dx, y - dy), (x + dy, y - dx), (x + dx, y + dy), (x - dy, y + dx)], fill=cols[i % len(cols)])
+    return img
 
 
 def render(spec, draw, events, out_path, seed=0):
@@ -513,15 +667,22 @@ def render(spec, draw, events, out_path, seed=0):
     dur = float(spec["dur"])
     punch_t = spec.get("punch_at", 0.66) * dur
     hook, style = spec.get("hook"), spec.get("hook_style", "pop")
+    if style not in HOOK_STYLES:
+        style = "pop"
+    kicker = KICKERS[seed % len(KICKERS)] if hook else None
     ev = []
     for e in events:
         g = e[2] if len(e) > 2 else 0.5
         ev.append((e[0], e[1], min(1.0, g * 1.8)))
     if hook:
-        ev += hook_sfx(style, len(hook.split()))
+        ev += [e for e in hook_sfx(style, len(hook.split())) if e[2] > 0]
+        ev += [(HOOK_DUR - 0.05, "pop", 0.5)]  # top line types in
     if spec.get("punch"):
-        ev += [(punch_t, "impact", 0.8), (punch_t, "flash", 0.6)]
+        ev += [(punch_t - 1.0, "riser", 0.7), (punch_t, "impact", 0.9), (punch_t, "flash", 0.7),
+               (punch_t + 0.1, "chime", 0.6)]
     ev += [(dur - 1.4, "chime", 0.6)]
+    beats = _beat_times(ev)
+    shakes = [(e[0], 0.25 + 0.6 * e[2]) for e in ev if e[1] in ("impact", "thud", "snap") and e[0] > 0.1]
     wav = out_path + ".wav"
     audio.build_audio(wav, dur, seed, ev)
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
@@ -536,15 +697,28 @@ def render(spec, draw, events, out_path, seed=0):
         c.particles(t)
         draw(c, t, spec)
         y = TOP_Y
-        if spec.get("top") and t >= top_from:
-            y = c.lines(spec["top"], W / 2, y, 30, spec.get("top_color", WHITE))
+        top = spec.get("top")
+        if top and t >= top_from:
+            n = int(clamp((t - top_from) / 0.5) * len(top)) + 1  # typewriter
+            c.lines(top[:n], W / 2, y, 30, spec.get("top_color", WHITE))
+            y = TOP_Y + 30 * 1.55 * len(wrap(top.upper(), 30))
         if spec.get("punch") and t >= punch_t:
-            c.lines(spec["punch"], W / 2, y + PUNCH_GAP, 30, spec.get("punch_color", T["accent"]))
+            k = clamp((t - punch_t) / 0.22)
+            px = int(30 + 14 * (1 - ease(k)))  # slam in big, settle
+            c.lines(spec["punch"], W / 2, y + PUNCH_GAP, px, spec.get("punch_color", T["accent"]))
         if t > dur - 1.4:
             c.text("FOLLOW FOR DAILY 1% BETTER", W / 2, 1560, 20, mix(SUB, T["accent2"], 0.5))
         img = c.finish(t)
+        img = ripples(img, t, beats, seed)
+        img = light_sweep(img, t)
+        img = shooting_stars(img, t, seed)
+        if spec.get("punch"):
+            img = confetti_burst(img, t, punch_t, seed)
+        img = camera(img, t, dur, shakes, punch_t)
+        img = vignette_pulse(img, t, beats)
         if hook:
-            img = draw_hook(img, t, hook, style)
+            img = draw_hook(img, t, hook, style, kicker)
+        img = progress_bar(img, t, dur)
         img = watermark(img, t)
         proc.stdin.write(img.tobytes())
     proc.stdin.close()

@@ -1,6 +1,17 @@
 """Opening hooks: a different one for every reel. *word* marks the accent-coloured word."""
 import random
 
+# curiosity hooks that work for any topic
+ANY = [
+    "Nobody talks about *this*.", "You've been doing it *wrong*.", "This took me years to *learn*.",
+    "Don't skip *this* one.", "Watch till the *last* second.", "This will change how you *think*.",
+    "Most people *fail* right here.", "Save this before you *forget*.", "I wish I knew this at *18*.",
+    "The *1%* won't tell you this.", "This is your *sign*.", "You need to hear *this* today.",
+    "Pause. *Read* this.", "Be honest with *yourself*.", "This is *uncomfortable*. Watch.",
+    "Why nobody *changes*.", "The *hard* truth.", "Your future self is *watching*.",
+    "Screenshot *this*.", "Rich minds do *this*.",
+]
+
 HAND = {
     "discipline": [
         "Motivation is *lying* to you.", "You don't need *motivation*.", "Discipline is just *this*.",
@@ -49,8 +60,8 @@ HAND = {
 FRAMES = [
     "Stop scrolling if you *{p}*.", "Watch this if you *{p}*.", "This is for you if you *{p}*.",
     "Still {p}? *Watch*.", "If you {p}, *see this*.", "Why do you *{p}*?",
-    "You {p}? This is *why*.", "POV: you *{p}*.", "Nobody tells people who {p} *this*.",
-    "Do you {p}? *Be honest*.", "The truth if you *{p}*.", "For everyone who *{p}*.",
+    "You {p}? This is *why*.", "POV: you *{p}*.", "Admit it. You *{p}*.",
+    "Do you {p}? *Be honest*.", "The truth if you *{p}*.", "Yes, you. You *{p}*.",
 ]
 PAINS = {
     "discipline": ["skip workouts", "keep snoozing", "quit easily", "start Mondays", "need motivation",
@@ -65,20 +76,19 @@ PAINS = {
     "fear": ["overthink", "fear failure", "wait for the right time", "fear judgement", "never take risks"],
     "growth": ["feel behind", "want to change", "feel lost", "want a glow up", "feel stuck in life"],
 }
-STYLES = ["pop", "type", "slide", "shake", "flash"]
+STYLES = ["pop", "type", "slide", "shake", "flash", "zoom", "glitch", "drop"]
 
 
 def all_hooks(topic):
-    out = list(HAND.get(topic, [])) + [h for hs in HAND.values() for h in hs if h not in HAND.get(topic, [])]
-    for p in PAINS.get(topic, []):
-        out += [f.format(p=p) for f in FRAMES]
-    return out
+    """Topic hooks + universal curiosity hooks + topic pain hooks first, then other topics' hooks."""
+    own = list(HAND.get(topic, [])) + ANY + [f.format(p=p) for p in PAINS.get(topic, []) for f in FRAMES]
+    rest = [h for t_, hs in HAND.items() if t_ != topic for h in hs]
+    return own + rest, len(own)
 
 
 def pick(rnd, used, topic):
     """Unique hook (never repeats until the whole bank is used), plus an animation style."""
-    pool = all_hooks(topic or "growth")
-    own = len(HAND.get(topic, [])) + len(PAINS.get(topic, [])) * len(FRAMES)
+    pool, own = all_hooks(topic or "growth")
     fresh = [h for h in pool if "hook|" + h not in used]
     if not fresh:
         for h in pool:

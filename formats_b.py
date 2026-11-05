@@ -22,10 +22,11 @@ def th():
 def _pick_key(rnd, used, build, tries=600):
     for _ in range(tries):
         key, spec = build()
-        key = "b2|" + key
+        key = "b3|" + key
         if key not in used:
             used.add(key)
             spec["key"] = key
+            spec["script_text"] = _script_text(spec)
             return spec
     raise RuntimeError("script bank exhausted")
 
@@ -112,14 +113,14 @@ BALL_COL = {"hoop": (240, 130, 50), "goal": (245, 245, 245), "bullseye": (230, 6
 def tiers_make(rnd, used):
     def build():
         si = rnd.randrange(len(TIER_SCRIPTS))
-        top, punch, cap, ig = TIER_SCRIPTS[si]
+        top, punch, cap, ig, *rest = TIER_SCRIPTS[si]
         tset = rnd.choice(TIER_SETS)
         target = rnd.choice(TIER_TARGETS)
         goal = rnd.choice(TIER_GOALS)
         miss = [rnd.choice((-1, 1)) for _ in range(TIER_N)]
         key = f"tiers|{si}|{tset[0]}|{target}|{goal}"
         return key, dict(format="tiers", dur=9.0, top=top, punch=punch, punch_at=0.82, caption_line=cap, ig=ig,
-                         topic="growth", tiers=tset, target=target, goal=goal, miss=miss)
+                         topic=rest[0] if rest else "growth", tiers=tset, target=target, goal=goal, miss=miss)
     return _pick_key(rnd, used, build)
 
 
@@ -412,8 +413,8 @@ def stack_make(rnd, used):
         variant = "jar" if r < 0.28 else ("pos" if r < 0.6 else "neg")
         if variant == "jar":
             si = rnd.randrange(len(JAR_SCRIPTS))
-            top, punch, cap, ig, unit, step, final = JAR_SCRIPTS[si]
-            topic = "money" if unit == "₹" else "habits"
+            top, punch, cap, ig, unit, step, final, *rest = JAR_SCRIPTS[si]
+            topic = rest[0] if rest else ("money" if unit == "₹" else "habits")
             key = f"stack|jar|{si}|{rnd.randrange(6)}"
             return key, dict(format="stack", dur=10.0, top=top.replace("₹", "RS "), punch=punch.replace("₹", "RS "),
                              punch_at=0.74, caption_line=cap, ig=ig, topic=topic, variant="jar",
@@ -422,7 +423,7 @@ def stack_make(rnd, used):
         pos = variant == "pos"
         bank, words = (STACK_POS, STACK_POS_WORDS) if pos else (STACK_NEG, STACK_NEG_WORDS)
         si = rnd.randrange(len(bank))
-        top, punch, cap, ig = bank[si]
+        top, punch, cap, ig, *rest = bank[si]
         counter = "day" if pos else rnd.choice(STACK_COUNTERS)
         if pos:
             labels = rnd.sample(words, STACK_N)
@@ -432,7 +433,7 @@ def stack_make(rnd, used):
             labels = [word] * STACK_N
         key = f"stack|{variant}|{si}|{word}|{counter}"
         return key, dict(format="stack", dur=10.0, top=top, punch=punch, punch_at=0.72, caption_line=cap, ig=ig,
-                         topic="habits" if pos else "discipline", variant=variant, positive=pos, labels=labels,
+                         topic=rest[0] if rest else ("habits" if pos else "discipline"), variant=variant, positive=pos, labels=labels,
                          counter=counter, start=rnd.choice((7, 8, 9)) if counter == "clock" else rnd.choice((18, 20, 22)))
     return _pick_key(rnd, used, build)
 
@@ -695,17 +696,17 @@ def failstairs_make(rnd, used):
     def build():
         if rnd.random() < 0.35:
             si = rnd.randrange(len(ROCKET_SCRIPTS))
-            top, punch, cap, ig = ROCKET_SCRIPTS[si]
+            top, punch, cap, ig, *rest = ROCKET_SCRIPTS[si]
             key = f"failstairs|rocket|{si}|{rnd.randrange(5)}"
             return key, dict(format="failstairs", dur=10.0, top=top, punch=punch, punch_at=0.74, caption_line=cap,
-                             ig=ig, topic="growth", variant="rocket", labels=[], goal="LIFT OFF")
+                             ig=ig, topic=rest[0] if rest else "growth", variant="rocket", labels=[], goal="LIFT OFF")
         si = rnd.randrange(len(FAIL_SCRIPTS))
-        top, punch, cap, ig = FAIL_SCRIPTS[si]
+        top, punch, cap, ig, *rest = FAIL_SCRIPTS[si]
         li = rnd.randrange(len(FAIL_SETS))
         goal = rnd.choice(FAIL_TOPS)
         key = f"failstairs|{si}|{li}|{goal}"
         return key, dict(format="failstairs", dur=10.0, top=top, punch=punch, punch_at=0.76, caption_line=cap,
-                         ig=ig, topic="growth", variant="stairs", labels=FAIL_SETS[li] + [goal], goal=goal)
+                         ig=ig, topic=rest[0] if rest else "growth", variant="stairs", labels=FAIL_SETS[li] + [goal], goal=goal)
     return _pick_key(rnd, used, build)
 
 
@@ -892,10 +893,10 @@ def kills_make(rnd, used):
         pairs = rnd.sample({"trade": TRADE_PAIRS, "build": BUILD_PAIRS, "kill": KILL_PAIRS}[kind], 6)
         bank = {"trade": TRADE_SCRIPTS, "build": BUILD_SCRIPTS, "kill": KILL_SCRIPTS}[kind]
         si = rnd.randrange(len(bank))
-        top, punch, cap, ig = bank[si]
-        key = f"kills|{kind}|{'/'.join(a for a, _ in pairs)}"
+        top, punch, cap, ig, *rest = bank[si]
+        key = f"kills|{kind}|{si}|{'/'.join(a for a, _ in pairs)}"
         return key, dict(format="kills", dur=7.5, top=top, punch=punch, punch_at=0.9, caption_line=cap, ig=ig,
-                         topic="mindset" if kind == "kill" else "habits", positive=kind != "kill", kind=kind,
+                         topic=rest[0] if rest else ("mindset" if kind == "kill" else "habits"), positive=kind != "kill", kind=kind,
                          pairs=pairs, action=rnd.choice(KILL_ACTIONS),
                          verb={"trade": "FOR", "build": "BUILDS", "kill": "KILLS"}[kind])
     return _pick_key(rnd, used, build)
@@ -961,6 +962,282 @@ def kills_events(spec):
     else:
         ev += [(end - 0.6, "heartbeat", 0.45), (end, "impact", 0.5), (end + 0.1, "rumble", 0.4)]
     return ev
+
+
+
+# =====================================================================
+# ROUND 3 SCRIPT BANKS (35 reels/day): tops x punches pools where any combination reads naturally.
+# Tuples: (top, punch, caption_line, ig, topic). Caption/ig/topic follow the punch (the moral).
+# =====================================================================
+def _combo(tops, punches):
+    return [(t,) + p for t in tops for p in punches]
+
+
+def _inr(n):
+    """Indian digit grouping: 182500 -> 1,82,500."""
+    s = str(int(n))
+    if len(s) <= 3:
+        return s
+    head, tail = s[:-3], s[-3:]
+    parts = []
+    while len(head) > 2:
+        parts.insert(0, head[-2:])
+        head = head[:-2]
+    if head:
+        parts.insert(0, head)
+    return ",".join(parts) + "," + tail
+
+
+TIER_TOPS3 = [
+    "WHERE ARE YOU?", "WHICH ROW ARE YOU?", "BE HONEST. WHICH ONE?", "SAME GOAL. THREE PEOPLE.",
+    "MOST PEOPLE STOP HERE.", "THIS IS EVERY GOAL.", "WATCH THE LAST ROW.", "THREE KINDS OF PEOPLE.",
+    "THE GAP IS NOT TALENT.", "WHO GETS THE RESULT?", "EVERYONE STARTS THE SAME.", "LOOK AT ROW THREE.",
+    "SAME CHANCE. DIFFERENT ENDING.", "WHERE DO YOU QUIT?", "COUNT THE MISSES.", "IT'S NOT LUCK.",
+    "WHY ONLY 1% MAKE IT.", "THE DIFFERENCE IS SIMPLE.", "PICK YOUR ROW.", "NOBODY TALKS ABOUT ROW 2.",
+    "WHAT SEPARATES THEM?", "ONE GOAL. THREE STORIES.", "THIS IS YOUR NEW YEAR GOAL.", "EVERY DREAM LOOKS LIKE THIS.",
+]
+TIER_PUNCH3 = [
+    ("THE 1% JUST DIDN'T STOP.", "Most people quit at the first miss. The 1% keep missing until they don't.",
+     "Miss hona normal hai. Rukna nahi.", "discipline"),
+    ("MISSES ARE PART OF THE SHOT.", "Missing is not failing. Stopping is.", "Galti se mat daro, rukne se daro.", "fear"),
+    ("THEY TREAT MISSES AS DATA.", "Winners don't take a miss personally. They take notes.",
+     "Har miss ek lesson hai, insult nahi.", "mindset"),
+    ("ATTEMPT 7 IS WHERE IT WORKS.", "Most people never see attempt 7. That's where it usually works.",
+     "Saatvi koshish tak koi nahi pahunchta.", "habits"),
+    ("ROW 1 NEVER EVEN TRIED.", "Not trying feels safe. It is the only guaranteed loss.",
+     "Try na karna hi asli haar hai.", "fear"),
+    ("THE GOAL NEVER MOVED.", "The goal stayed the same. Only the number of tries changed.",
+     "Goal wahi tha, bas koshishein alag thi.", "growth"),
+    ("KEEP SHOOTING.", "You miss every shot you stop taking.", "Shot lena band mat karo.", "discipline"),
+    ("ONE MORE TRY CHANGES THE ROW.", "You are always one more try away from a different row.",
+     "Ek aur try, aur row badal jaati hai.", "growth"),
+    ("QUITTING IS THE REAL MISS.", "A missed shot is a step. A quit is the end.", "Asli miss hai haar maan lena.", "mindset"),
+    ("TALENT STARTS. REPEATS FINISH.", "Talent gets you started. Repetition gets you there.",
+     "Talent shuru karata hai, repeat jitata hai.", "habits"),
+    ("SAME TARGET. MORE TRIES.", "The winners didn't have an easier target. They took more shots.",
+     "Target same tha, try zyada the.", "discipline"),
+    ("FAIL FAST. TRY FASTER.", "Fail fast, learn, and try again faster.", "Jaldi fail, jaldi seekho.", "growth"),
+    ("THE 1% ARE NOT SPECIAL. THEY'RE STUBBORN.", "The top 1% are rarely gifted. They are stubborn.",
+     "1% log special nahi, ziddi hote hain.", "mindset"),
+    ("NO ONE REMEMBERS YOUR MISSES.", "People remember the goal, not the misses before it.",
+     "Log goal yaad rakhte hain, miss nahi.", "fear"),
+    ("STOP COUNTING. KEEP GOING.", "Stop counting the failures and keep taking shots.", "Ginna band, khelna jaari.", "focus"),
+    ("RESULTS LOVE REPETITION.", "Results show up for the ones who repeat.", "Result unhe milta hai jo dohraate hain.", "habits"),
+    ("YOUR ROW IS A CHOICE.", "Nobody is born in a row. You choose it every attempt.", "Row tum khud chunte ho.", "mindset"),
+    ("THE MISS IS THE PRICE.", "Every goal has a price. It is paid in misses.", "Har goal ki keemat misses hain.", "time"),
+    ("TRY UNTIL IT'S BORING. THEN TRY AGAIN.", "Keep trying past boredom. That's where results hide.",
+     "Bore hone ke baad bhi try karo.", "discipline"),
+    ("THE LAST ROW DIDN'T WAIT TO FEEL READY.", "Ready is a feeling. Attempts are a decision.",
+     "Ready feel ka wait mat karo.", "focus"),
+    ("ONLY ONE ROW GETS THE GOLD.", "Gold goes to the row that kept going.", "Sona us row ko milta hai jo rukti nahi.", "growth"),
+    ("DON'T BE ROW TWO.", "Trying once and quitting hurts more than never trying.", "Ek baar try karke mat ruko.", "time"),
+]
+
+STACK_NEG_TOPS3 = [
+    "EVERY LATER HAS WEIGHT.", "IT'S JUST ONE DAY.", "YOU SAID TOMORROW.", "ONE SMALL DELAY.", "WATCH THIS PILE.",
+    "THIS IS PROCRASTINATION.", "NOBODY NOTICES DAY ONE.", "IT FEELS HARMLESS.", "SKIP. SKIP. SKIP.", "JUST ONE MORE.",
+    "THE EASY CHOICE. AGAIN.", "YOU'LL DO IT LATER?", "TODAY'S LITTLE EXCUSE.", "IT'S NOT A BIG DEAL.",
+    "THIS IS HOW YEARS GO.", "MONDAY. THEN NEXT MONDAY.", "SMALL ESCAPES ADD UP.", "EVERY DAY, A LITTLE MORE.",
+    "YOU DIDN'T NOTICE IT.", "THE PILE YOU IGNORE.", "THIS IS YOUR BACKLOG.", "NO ONE FALLS IN A DAY.",
+    "IT'S ONLY 5 MINUTES.", "YOU'LL START NEXT WEEK?",
+]
+STACK_NEG_PUNCH3 = [
+    ("IT PILES UP.", "Postponed work does not vanish. It waits with interest.", "Taala hua kaam jama hota hai.", "time"),
+    ("ONE DAY YOU CAN'T MOVE.", "Every small delay adds weight until you can't move.", "Ek din hil bhi nahi paoge.", "time"),
+    ("LATER BECOMES NEVER.", "Later is where plans go to die quietly.", "'Baad mein' aksar 'kabhi nahi' ban jaata hai.", "time"),
+    ("IT NEVER STAYS SMALL.", "Small delays never stay small. They compound.", "Chhoti der chhoti nahi rehti.", "mindset"),
+    ("YOUR FUTURE CARRIES IT.", "Everything you skip today, future you has to carry.", "Aaj ka skip kal ka bojh hai.", "time"),
+    ("IT ADDS UP. QUIETLY.", "Bad habits never announce themselves. They just add up.", "Buri aadatein chupchaap judti hain.", "mindset"),
+    ("TIME KEEPS THE RECEIPTS.", "Time remembers every hour you wasted.", "Waqt har ghante ka hisaab rakhta hai.", "time"),
+    ("SMALL DELAYS. BIG REGRET.", "Today's small delay is tomorrow's big regret.", "Aaj ki der, kal ka pachtaava.", "fear"),
+    ("THE BILL ALWAYS COMES.", "Comfort is a loan. The bill always comes.", "Aaram ka bill zaroor aata hai.", "money"),
+    ("THAT'S HOW DREAMS GET BURIED.", "Dreams rarely die. They get buried under small excuses.",
+     "Sapne marte nahi, bahano ke neeche dab jaate hain.", "mindset"),
+    ("CLEAR ONE TODAY.", "Pick one thing from the pile and clear it today.", "Aaj ek cheez khatam karo.", "time"),
+    ("AND THEN IT'S A YEAR.", "One skipped day turns into a skipped year faster than you think.",
+     "Ek din ka skip, saal ka skip ban jaata hai.", "time"),
+    ("THE PILE ALWAYS WINS.", "If you keep adding to the pile, the pile always wins.", "Dher hamesha jeetta hai.", "fear"),
+    ("IT GETS HEAVIER EVERY DAY.", "Avoiding a task makes it heavier, not lighter.", "Taalne se kaam bhaari hota hai.", "mindset"),
+    ("NOBODY WILL CLEAR IT FOR YOU.", "Nobody is coming to clear your pile. Start now.", "Tumhara dher koi aur nahi hatayega.", "fear"),
+    ("STOP ADDING. START CLEARING.", "Stop adding excuses and start clearing them.", "Bahane jodna band, hatana shuru.", "mindset"),
+    ("YOU'RE NOT STUCK. YOU'RE BURIED.", "It isn't laziness. It's a pile of small delays.", "Tum phanse nahi, dabe ho.", "mindset"),
+    ("THE COST IS YOUR TIME.", "Every excuse is paid for with your time.", "Har bahane ki keemat waqt hai.", "money"),
+]
+
+STACK_POS_TOPS3 = [
+    "ONE BLOCK A DAY.", "WATCH IT GROW.", "DAY 1 LOOKS LIKE NOTHING.", "SMALL HABITS.", "NOBODY CLAPS FOR DAY 1.",
+    "STACK YOUR DAYS.", "BORING. DAILY. REPEAT.", "THIS IS COMPOUNDING.", "BUILD IT SLOWLY.", "ONE GOOD CHOICE.",
+    "TINY WINS.", "DO IT AGAIN TOMORROW.", "THIS IS HOW YOU CHANGE.", "BRICK BY BRICK.", "NO SHORTCUTS HERE.",
+    "SHOW UP. STACK.", "QUIET PROGRESS.", "KEEP STACKING.", "IT DOESN'T LOOK LIKE MUCH.", "EVERY DAY COUNTS.",
+]
+STACK_POS_PUNCH3 = [
+    ("THEN IT'S A TOWER.", "Stack small habits long enough and they become a tower.", "Roz ki eent ek din tower banti hai.", "habits"),
+    ("UNTIL IT'S UNDENIABLE.", "Do it daily until your results are undeniable.", "Itna karo ki koi ignore na kar sake.", "discipline"),
+    ("THAT'S A NEW LIFE.", "A new life is just new habits, stacked.", "Nayi aadatein, nayi zindagi.", "growth"),
+    ("TIME DOES THE REST.", "Do the small thing daily. Time does the rest.", "Chhota kaam roz, baaki waqt karega.", "habits"),
+    ("CONSISTENCY BEATS INTENSITY.", "Daily and small beats rare and huge.", "Roz thoda, kabhi kabhi bahut se behtar.", "discipline"),
+    ("AND ONE DAY, YOU'RE THERE.", "You won't notice the climb. One day you'll be at the top.", "Ek din pahunch jaoge.", "growth"),
+    ("THE RESULTS ARE LOUD.", "Build quietly. The results will be loud.", "Kaam chupchaap, result shor karega.", "focus"),
+    ("SMALL TODAY. MASSIVE LATER.", "What looks small today looks massive in a year.", "Aaj chhota, kal bahut bada.", "habits"),
+    ("THIS IS DISCIPLINE.", "Discipline is just doing the boring block again.", "Discipline matlab boring kaam roz.", "discipline"),
+    ("YOUR FUTURE SAYS THANKS.", "Every block today is a gift to future you.", "Future tum shukriya bolega.", "growth"),
+    ("DON'T BREAK THE CHAIN.", "Stack one more day. Don't break the chain.", "Chain mat todo.", "habits"),
+    ("FOCUS ON THE NEXT BLOCK.", "Don't look at the tower. Place the next block.", "Agli eent pe dhyaan do.", "focus"),
+    ("SLOW IS STILL FORWARD.", "Slow progress is still progress.", "Dheere hi sahi, aage to ho.", "growth"),
+    ("HABITS BUILD THE PERSON.", "You become what you stack every day.", "Jo roz karte ho wahi bante ho.", "habits"),
+    ("REPEAT. THAT'S IT.", "There is no secret. Just repeat.", "Koi secret nahi, bas repeat.", "discipline"),
+    ("ONE DAY THEY'LL ASK HOW.", "One day people will ask how. Show them the blocks.", "Ek din log poochenge kaise.", "focus"),
+]
+
+FAIL_TOPS3 = [
+    "EVERY FAIL IS A STEP.", "THEY ALL SAID NO.", "ATTEMPT 1. FAIL.", "FAILED AGAIN?", "COUNT YOUR NOS.",
+    "THIS IS WHAT SUCCESS LOOKS LIKE.", "NOBODY SAW THESE.", "REJECTED. AGAIN.", "STILL FAILING?",
+    "THE STAIRS NOBODY POSTS.", "IT DIDN'T WORK. YET.", "THEY LAUGHED AT STEP ONE.", "BEHIND EVERY WIN.",
+    "YOU CALL IT FAILURE.", "THE REAL STAIRCASE.", "WATCH HIM CLIMB.", "FAIL. LEARN. STEP UP.",
+    "MOST PEOPLE STOP AT STEP 2.", "SUCCESS HAS A STAIRCASE.", "EVERY TOPPER CLIMBED THIS.",
+]
+FAIL_PUNCH3 = [
+    ("KEEP CLIMBING.", "Every failure is a step, if you keep climbing.", "Har fail ek seedhi hai, chadhte raho.", "growth"),
+    ("THE NOS BUILT THE STAIRS.", "Every no you survive becomes a step under your feet.", "Har 'no' tumhe upar le jaata hai.", "fear"),
+    ("ONE MORE STEP.", "The top is always one more step away.", "Bas ek step aur.", "discipline"),
+    ("THE TOP WAS WORTH IT.", "Every painful step was worth the view from the top.", "Upar ka nazara har dard ke laayak tha.", "growth"),
+    ("FAILURE IS FUEL.", "Use every failure as fuel for the next step.", "Failure ko fuel banao.", "mindset"),
+    ("THE STEPS WERE NEVER WASTED.", "No failed attempt is wasted. It becomes a step.", "Koi koshish bekaar nahi jaati.", "mindset"),
+    ("YOU'RE CLOSER THAN YOU THINK.", "The next step might be the last one.", "Tum soch se zyada paas ho.", "fear"),
+    ("WINNERS FAIL MORE.", "Winners fail more often. They just keep climbing.", "Jeetne wale zyada fail hote hain.", "mindset"),
+    ("DON'T STOP ON STEP 6.", "Most people quit one step before the top.", "Top se ek step pehle mat ruko.", "discipline"),
+    ("STAND ON YOUR MISTAKES.", "Mistakes are stairs, not walls.", "Galtiyon par khade ho jao.", "growth"),
+    ("THEN ONE DAY: YES.", "After enough nos, one day you hear yes.", "Bahut saare 'no' ke baad ek 'yes' aata hai.", "fear"),
+    ("YOUR STORY NEEDS THESE.", "Every great story has these ugly steps.", "Har kahani ko ye steps chahiye.", "mindset"),
+    ("THAT'S HOW EVERYONE GOT THERE.", "Every success story climbed the same staircase.", "Sab isi seedhi se upar gaye.", "growth"),
+    ("FAIL FORWARD.", "If you have to fail, fail forward.", "Gir bhi to aage giro.", "discipline"),
+    ("ONLY QUITTING IS FINAL.", "Failure is a step. Quitting is the only final step.", "Sirf haar maanna final hai.", "fear"),
+    ("EACH NO WAS A LESSON.", "Every rejection taught you something for the next step.", "Har 'no' ek lesson tha.", "habits"),
+    ("THE VIEW IS AT THE TOP.", "You won't see it from the middle. Keep going.", "Nazara upar hai.", "focus"),
+    ("GO AGAIN.", "Fall, stand, go again.", "Phir se jao.", "discipline"),
+]
+
+ROCKET_TOPS3 = [
+    "LAUNCH 1: FAIL.", "IT WON'T FLY, THEY SAID.", "SMOKE. AGAIN.", "SIX FAILED STARTS.", "PRESS IT AGAIN.",
+    "EVERY DREAM HAS SMOKE.", "FAILED. FIXED. AGAIN.", "THEY STOPPED AT SMOKE.", "YOUR IDEA, DAY ONE.",
+    "NOT YET. NOT YET. NOT YET.", "BUILD. FAIL. REPEAT.", "EVERY STARTUP LOOKS LIKE THIS.",
+]
+ROCKET_PUNCH3 = [
+    ("LAUNCH 7 CHANGED EVERYTHING.", "The launch that worked was built on six that didn't.", "6 baar fail, 7th baar udaan.", "growth"),
+    ("THEN IT FLEW.", "Most things that fly failed on the ground first.", "Pehle zameen pe fail, phir udaan.", "fear"),
+    ("KEEP PRESSING THE BUTTON.", "Keep pressing. One ignition is all it takes.", "Button dabate raho.", "discipline"),
+    ("SMOKE IS JUST WARM UP.", "Every failed start is your engine warming up.", "Dhuaan sirf warm up hai.", "mindset"),
+    ("ONE IGNITION IS ENOUGH.", "You only need it to work once.", "Bas ek baar chalna kaafi hai.", "fear"),
+    ("NOW LOOK UP.", "The ones who laughed are now looking up.", "Ab sab upar dekh rahe hain.", "growth"),
+    ("FIX IT. FIRE AGAIN.", "Fix one thing. Fire again.", "Theek karo, phir chalao.", "habits"),
+    ("THE SKY WAS WAITING.", "The sky was always there. You just had to keep trying.", "Aasmaan intezaar kar raha tha.", "time"),
+    ("PATIENCE HAS A LIFT OFF.", "Patience doesn't feel like progress until lift off.", "Sabar ka bhi lift off hota hai.", "time"),
+    ("DON'T QUIT AT SMOKE.", "Most people quit at the smoke. Stay for the fire.", "Dhuaan dekh ke mat ruko.", "focus"),
+    ("FAILURE WAS THE FUEL.", "The failures were the fuel all along.", "Failure hi fuel tha.", "mindset"),
+]
+
+KILL_TOPS3 = [  # (top, caption_line, ig, topic)
+    ("WHAT IS KILLING YOUR DREAMS?", "Most dreams don't die in one blow. They die of small daily habits.", "Sapne roz ki aadaton se marte hain.", "mindset"),
+    ("THE SILENT DREAM KILLERS.", "The most dangerous habits are the quiet ones.", "Sabse khatarnak aadatein chupchaap hoti hain.", "mindset"),
+    ("CUT THESE OUT.", "Cut one of these out this week and watch what changes.", "Inme se ek is hafte kaato.", "discipline"),
+    ("YOUR DAILY ENEMIES.", "Your enemies are not people. They are habits.", "Dushman log nahi, aadatein hain.", "mindset"),
+    ("WHY YOU FEEL STUCK.", "Feeling stuck usually has a list. Here it is.", "Atke hue ho? Wajah ye hai.", "mindset"),
+    ("THIS IS WHERE YOUR TIME GOES.", "Your time doesn't vanish. These take it.", "Tumhara waqt yahi kha jaate hain.", "time"),
+    ("THE COST OF COMFORT.", "Comfort feels free. This is what it costs.", "Aaram free nahi hai.", "money"),
+    ("WHAT FEAR TAKES FROM YOU.", "Fear doesn't just stop you. It takes things from you.", "Dar bahut kuch chheen leta hai.", "fear"),
+    ("SCREENSHOT THIS.", "Screenshot it. Check it every Sunday.", "Screenshot lo, har Sunday dekho.", "mindset"),
+    ("THE TRUTH NOBODY POSTS.", "Nobody posts these, but everybody fights them.", "Ye koi post nahi karta.", "mindset"),
+    ("YOUR NIGHTS DECIDE THIS.", "What you do at night decides how your mornings feel.", "Raat ki aadatein subah tay karti hain.", "time"),
+    ("BE HONEST. HOW MANY?", "Count how many of these you did today.", "Aaj inme se kitne kiye?", "mindset"),
+]
+BUILD_TOPS3 = [
+    ("WHAT ACTUALLY BUILDS YOU.", "These look boring. They build everything.", "Ye boring hain, par sab banate hain.", "habits"),
+    ("THE 1% HABIT LIST.", "The 1% don't have secrets. They have habits.", "1% ke paas secret nahi, aadatein hain.", "habits"),
+    ("START WITH ONE.", "Start with one line today. Add another next week.", "Ek se shuru karo.", "discipline"),
+    ("MORNING REMINDER.", "Read this every morning before your phone.", "Phone se pehle ye padho.", "focus"),
+    ("BUILD YOUR LIFE ON THESE.", "A strong life sits on simple foundations.", "Mazboot life simple neev pe banti hai.", "growth"),
+    ("THE QUIET FORMULA.", "Nothing here is loud. All of it works.", "Kuch shor nahi, sab kaam karta hai.", "habits"),
+    ("SAVE THIS FOR 2027.", "Do these all year and meet a new you.", "Saal bhar karo, naya tum milega.", "growth"),
+    ("YOUR DAILY BUILDERS.", "Small daily builders beat big rare efforts.", "Roz ke chhote kaam jitate hain.", "discipline"),
+]
+TRADE_TOPS3 = [
+    ("TRADE UP.", "Every day you trade something. Trade up.", "Roz trade karte ho, behtar karo.", "growth"),
+    ("ONE SWAP A WEEK.", "One swap a week is 52 better habits a year.", "Hafte mein ek swap.", "habits"),
+    ("SWAP IT. DON'T QUIT IT.", "Don't fight a habit. Replace it.", "Aadat chhodo nahi, badlo.", "discipline"),
+    ("SAME HOURS. BETTER TRADES.", "Same 24 hours. Better trades.", "Wahi 24 ghante, behtar trade.", "focus"),
+    ("YOUR UPGRADE LIST.", "Upgrade one line this week.", "Is hafte ek line upgrade karo.", "growth"),
+]
+KILL_PUNCH3 = [None, None, "PICK ONE. FIX IT TODAY.", "WHICH ONE IS YOURS?", "START WITH THE FIRST.",
+               "NOW YOU KNOW.", "CHOOSE BETTER TODAY.", "SAVE THIS. READ IT DAILY.", "YOUR MOVE.",
+               "FIX ONE THIS WEEK.", "AWARENESS IS STEP ONE.", "STARVE THEM.", "THEN BUILD THE OPPOSITE."]
+EXTRA_KILL_PAIRS = [("HURRY", "QUALITY"), ("CYNICISM", "HOPE"), ("SNOOZE", "MORNINGS"), ("SHOPPING", "SAVINGS"),
+                    ("PEOPLE PLEASING", "SELF RESPECT"), ("DOOMSCROLLING", "SLEEP"), ("MULTITASKING", "DEPTH"),
+                    ("SELF PITY", "STRENGTH"), ("FAST FOOD", "FITNESS"), ("BINGE WATCHING", "WEEKENDS")]
+EXTRA_BUILD_PAIRS = [("JOURNALING", "CLARITY"), ("MENTORS", "SHORTCUTS"), ("SUNLIGHT", "MOOD"), ("STRETCHING", "EASE"),
+                     ("BUDGETING", "CALM"), ("PRACTICE", "MASTERY"), ("KINDNESS", "FRIENDS"), ("WATER", "FOCUS")]
+EXTRA_TRADE_PAIRS = [("SODA", "WATER"), ("SNOOZE", "SUNRISE"), ("NETFLIX", "NAPS"), ("WORRY", "ACTION"),
+                     ("SHOPPING", "INVESTING"), ("REELS", "BOOKS"), ("NEWS", "NATURE")]
+
+
+def _jar_scripts3():
+    out = []
+    for a in (10, 20, 30, 50, 100, 150, 200, 250, 500):
+        for yrs in (1, 3, 5):
+            total = a * 365 * yrs
+            ytxt = "1 YEAR" if yrs == 1 else f"{yrs} YEARS"
+            for top in (f"RS {a} A DAY.", f"JUST RS {a} DAILY.", f"SAVE RS {a} EVERY DAY."):
+                out.append((top, f"{ytxt} = RS {_inr(total)}.",
+                            f"Rs {a} a day feels like nothing. In {ytxt.lower()} it is Rs {_inr(total)}.",
+                            f"Roz Rs {a}, {yrs} saal mein Rs {_inr(total)}.", "RS", a, f"RS {_inr(total)}", "money"))
+    units = [  # (amount list, unit, top fmt, punch fmt, yearly fmt, caption fmt, ig fmt, topic)
+        ((2, 5, 10, 20), "PAGES", "{a} PAGES A DAY.", "1 YEAR = {y:,} PAGES.", "{b} BOOKS",
+         "{a} pages a day is about {b} books a year.", "Roz {a} page, saal mein {b} kitaabein.", "habits"),
+        ((5, 20, 25, 50), "PUSHUPS", "{a} PUSHUPS A DAY.", "1 YEAR = {y:,} PUSHUPS.", "{y:,}",
+         "{a} pushups a day is {y:,} in a year.", "Roz {a} pushups, saal mein {y:,}.", "discipline"),
+        ((10, 15, 20, 45, 60), "MIN", "{a} MIN A DAY.", "1 YEAR = {h} HOURS.", "{h} HRS",
+         "{a} minutes a day is {h} hours a year. That's a new skill.", "Roz {a} minute, saal ke {h} ghante.", "focus"),
+        ((1, 2, 3, 5), "KM", "WALK {a} KM A DAY.", "1 YEAR = {y:,} KM.", "{y:,} KM",
+         "Walk {a} km a day and you walk {y:,} km in a year.", "Roz {a} km, saal mein {y:,} km.", "habits"),
+        ((3, 10, 20), "WORDS", "LEARN {a} WORDS A DAY.", "1 YEAR = {y:,} WORDS.", "{y:,}",
+         "{a} new words a day is {y:,} words a year.", "Roz {a} naye words.", "growth"),
+        ((1, 2, 3), "HRS", "{a} HOUR LESS SCROLLING.", "1 YEAR = {d} DAYS BACK.", "{d} DAYS",
+         "{a} hour less scrolling a day gives you {d} full days back a year.", "Roz {a} ghanta kam scroll = {d} din wapas.", "time"),
+    ]
+    for amounts, unit, tf, pf, ff, cf, igf, topic in units:
+        for a in amounts:
+            y = a * 365
+            vals = dict(a=a, y=y, b=round(y / 250), h=round(a * 365 / 60), d=round(a * 365 / 24))
+            out.append((tf.format(**vals), pf.format(**vals), cf.format(**vals), igf.format(**vals), unit,
+                        a, ff.format(**vals), topic))
+    return out
+
+
+TIER_SCRIPTS.extend(_combo(TIER_TOPS3, TIER_PUNCH3))
+STACK_NEG.extend(_combo(STACK_NEG_TOPS3, STACK_NEG_PUNCH3))
+STACK_POS.extend(_combo(STACK_POS_TOPS3, STACK_POS_PUNCH3))
+JAR_SCRIPTS.extend(_jar_scripts3())
+FAIL_SCRIPTS.extend(_combo(FAIL_TOPS3, FAIL_PUNCH3))
+ROCKET_SCRIPTS.extend(_combo(ROCKET_TOPS3, ROCKET_PUNCH3))
+KILL_SCRIPTS.extend([(t, p, c, ig, tp) for t, c, ig, tp in KILL_TOPS3 for p in KILL_PUNCH3])
+BUILD_SCRIPTS.extend([(t, p, c, ig, tp) for t, c, ig, tp in BUILD_TOPS3 for p in KILL_PUNCH3[:2] + ["PICK ONE TODAY.",
+                                                                                                    "START TOMORROW AT 6 AM."]])
+TRADE_SCRIPTS.extend([(t, p, c, ig, tp) for t, c, ig, tp in TRADE_TOPS3 for p in (None, "MAKE ONE SWAP TODAY.",
+                                                                                     "SMALL SWAPS. BIG LIFE.")])
+KILL_PAIRS.extend(EXTRA_KILL_PAIRS)
+BUILD_PAIRS.extend(EXTRA_BUILD_PAIRS)
+TRADE_PAIRS.extend(EXTRA_TRADE_PAIRS)
+
+
+def _script_text(spec):
+    parts = [spec.get("top"), spec.get("punch"), spec.get("goal"), spec.get("final")]
+    parts += list(spec.get("tiers") or [])
+    parts.append(spec.get("target"))
+    labels = spec.get("labels") or []
+    if spec.get("variant") == "neg" and labels:
+        labels = labels[:1]
+    parts += labels
+    parts += [f"{a} {spec.get('verb', '')} {b}" for a, b in (spec.get("pairs") or [])]
+    return "|".join(str(p) for p in parts if p)
 
 
 FORMATS = {

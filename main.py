@@ -74,20 +74,33 @@ def formats():
     return {**formats_a.FORMATS, **formats_b.FORMATS}
 
 
+def _script_key(spec):
+    return "script|" + (spec.get("script_text") or (str(spec.get("top")) + "|" + str(spec.get("punch"))))
+
+
 def make_spec(F, used, rnd, last):
-    names = [n for n in FORMAT_WEIGHTS if n in F and n != last] or list(F)
-    name = rnd.choices(names, weights=[FORMAT_WEIGHTS.get(n, 1) for n in names])[0]
+    """Weighted format choice; a format whose scripts are all used is skipped, so no script repeats."""
     import hooks
     import nv
-    for _try in range(120):  # same on-screen script (top + punch) must not repeat while fresh ones exist
-        snap = set(used)
-        spec = F[name]["make"](rnd, used)
-        text_key = "script|" + (spec.get("script_text") or (str(spec.get("top")) + "|" + str(spec.get("punch"))))
-        if text_key not in used:
+    names = [n for n in FORMAT_WEIGHTS if n in F and n != last] or list(F)
+    spec = None
+    while names:
+        name = rnd.choices(names, weights=[FORMAT_WEIGHTS.get(n, 1) for n in names])[0]
+        for _try in range(40):
+            snap = set(used)
+            cand = F[name]["make"](rnd, used)
+            if _script_key(cand) not in used:
+                spec = cand
+                break
+            used.clear()
+            used.update(snap)
+        if spec:
             break
-        used.clear()
-        used.update(snap)
-    used.add(text_key)
+        names.remove(name)
+    if spec is None:  # every bank exhausted: allow repeats rather than stop posting
+        name = rnd.choice(list(F))
+        spec = F[name]["make"](rnd, used)
+    used.add(_script_key(spec))
     spec["format"] = name
     spec["hook"], spec["hook_style"] = hooks.pick(rnd, used, spec.get("topic"))
     last_theme = getattr(make_spec, "last_theme", None)
