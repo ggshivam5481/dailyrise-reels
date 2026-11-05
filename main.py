@@ -77,8 +77,14 @@ def formats():
 def make_spec(F, used, rnd, last):
     names = [n for n in FORMAT_WEIGHTS if n in F and n != last] or list(F)
     name = rnd.choices(names, weights=[FORMAT_WEIGHTS.get(n, 1) for n in names])[0]
+    import hooks
+    import nv
     spec = F[name]["make"](rnd, used)
     spec["format"] = name
+    spec["hook"], spec["hook_style"] = hooks.pick(rnd, used, spec.get("topic"))
+    last_theme = getattr(make_spec, "last_theme", None)
+    spec["theme"] = rnd.choice([th["name"] for th in nv.THEMES if th["name"] != last_theme])
+    make_spec.last_theme = spec["theme"]
     return spec
 
 

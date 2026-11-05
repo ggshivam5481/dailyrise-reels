@@ -25,6 +25,61 @@ GOLD2 = (255, 214, 130)
 BLOCK = (210, 210, 212)
 HANDLE = "@DAILYRISE.REELS"
 
+# Per-reel colour themes (background gradient, spotlight, accents, particles, floor tint)
+THEMES = [
+    dict(name="midnight", bg_top=(10, 14, 40), bg_bot=(2, 3, 10), spot=(130, 160, 255), accent=(255, 200, 80),
+         accent2=(120, 200, 255), particle=(140, 170, 255), floor=(10, 14, 34)),
+    dict(name="ember", bg_top=(42, 12, 6), bg_bot=(6, 2, 2), spot=(255, 150, 70), accent=(255, 110, 50),
+         accent2=(255, 210, 120), particle=(255, 140, 60), floor=(36, 12, 6)),
+    dict(name="royal", bg_top=(32, 10, 48), bg_bot=(5, 2, 10), spot=(200, 140, 255), accent=(255, 205, 95),
+         accent2=(220, 150, 255), particle=(190, 130, 255), floor=(26, 8, 38)),
+    dict(name="teal", bg_top=(4, 34, 40), bg_bot=(1, 6, 8), spot=(90, 235, 215), accent=(255, 210, 90),
+         accent2=(90, 235, 215), particle=(110, 240, 220), floor=(4, 28, 32)),
+    dict(name="crimson", bg_top=(44, 4, 14), bg_bot=(6, 1, 3), spot=(255, 90, 110), accent=(255, 70, 90),
+         accent2=(255, 190, 120), particle=(255, 100, 120), floor=(36, 4, 12)),
+    dict(name="forest", bg_top=(6, 32, 16), bg_bot=(1, 6, 3), spot=(140, 255, 160), accent=(140, 255, 120),
+         accent2=(255, 220, 110), particle=(150, 255, 170), floor=(6, 26, 12)),
+    dict(name="sunset", bg_top=(56, 18, 44), bg_bot=(8, 3, 10), spot=(255, 160, 130), accent=(255, 170, 70),
+         accent2=(255, 120, 170), particle=(255, 170, 140), floor=(44, 14, 32)),
+    dict(name="ice", bg_top=(14, 30, 50), bg_bot=(2, 5, 10), spot=(180, 225, 255), accent=(120, 210, 255),
+         accent2=(255, 255, 255), particle=(190, 230, 255), floor=(12, 24, 40)),
+]
+T = dict(THEMES[0])
+
+
+def set_theme(i):
+    """Pick the colour theme for the next reel (int index/seed or theme name)."""
+    global T
+    if isinstance(i, str):
+        T = dict(next(th for th in THEMES if th["name"] == i))
+    else:
+        T = dict(THEMES[int(i) % len(THEMES)])
+    return T
+
+
+_bgc = {}
+
+
+def _background():
+    key = T["name"]
+    if key not in _bgc:
+        g = Image.linear_gradient("L").resize((W, FLOOR))
+        top = tuple(min(255, int(c * 2.1)) for c in T["bg_top"])
+        bot = tuple(min(255, int(c * 1.6)) for c in T["bg_bot"])
+        img = Image.merge("RGB", [g.point(lambda v, i=i: int(top[i] + (bot[i] - top[i]) * (v / 255) ** 0.8))
+                                  for i in range(3)])
+        full = Image.new("RGB", (W, H), BG)
+        full.paste(img, (0, 0))
+        glow = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(glow).ellipse([W * 0.1, 360, W * 0.9, 1240], fill=105)
+        glow = glow.filter(ImageFilter.GaussianBlur(160))
+        full.paste(T["spot"], (0, 0), glow)
+        fl = Image.linear_gradient("L").resize((W, H - FLOOR))
+        fc = T["floor"]
+        floor = Image.merge("RGB", [fl.point(lambda v, i=i: min(255, int(fc[i] * 2.2 * (1 - v / 255) ** 1.3 + BG[i]))) for i in range(3)])
+        _bgc[key] = (full, floor)
+    return _bgc[key]
+
 HEAD_R, TORSO, UA, FA, TH, SH, LIMB = 27, 92, 52, 48, 62, 60, 18
 BASE = dict(lean=0, head=0, la1=-12, la2=-4, ra1=12, ra2=4, ll1=-6, ll2=0, rl1=6, rl2=0)
 
@@ -198,12 +253,25 @@ def _cone(width, height):
 
 class Canvas:
     def __init__(self):
-        self.img = Image.new("RGB", (W, H), BG)
+        self.img = _background()[0].copy()
         self.d = ImageDraw.Draw(self.img)
         self.ui = []
 
+    def particles(self, t, n=40):
+        """Soft coloured bokeh drifting upward (theme colour)."""
+        col = T["particle"]
+        for i in range(n):
+            ph = (i * 0.6180339) % 1
+            x = (ph * W + math.sin(t * 0.4 + i) * 30) % W
+            y = FLOOR - ((t * (14 + 9 * (i % 5)) + i * 97) % (FLOOR - 120))
+            r = 2 + (i % 4)
+            a = 0.45 + 0.5 * (0.5 + 0.5 * math.sin(t * 1.7 + i * 2.3))
+            c = mix(T["bg_bot"], col, a)
+            self.d.ellipse([x - r, y - r, x + r, y + r], fill=c)
+
     # lights & props (world: reflected in the floor)
-    def spot(self, x, width=320, color=(255, 255, 255), strength=1.0, top=FLOOR - 760):
+    def spot(self, x, width=320, color=None, strength=1.0, top=FLOOR - 760):
+        color = color or mix(T["spot"], (255, 255, 255), 0.35)
         m = _cone(width, FLOOR - top)
         if strength < 1:
             m = m.point(lambda v: int(v * strength))
@@ -306,10 +374,10 @@ class Canvas:
         band = img.crop((0, FLOOR - REF_H, W, FLOOR)).transpose(Image.FLIP_TOP_BOTTOM)
         small = band.resize((W // 3, REF_H // 3)).filter(ImageFilter.GaussianBlur(1.2))
         band = small.resize((W, REF_H))
-        img.paste(Image.new("RGB", (W, H - FLOOR), BG), (0, FLOOR))
+        img.paste(_background()[1], (0, FLOOR))
         img.paste(band, (0, FLOOR), _fade_mask())
         d = ImageDraw.Draw(img)
-        d.line([(0, FLOOR), (W, FLOOR)], fill=(30, 30, 33), width=2)
+        d.line([(0, FLOOR), (W, FLOOR)], fill=mix(T["floor"], (255, 255, 255), 0.12), width=2)
         for item in self.ui:
             if item[0] != "__bubble__":
                 self._draw_text(*item)
@@ -354,38 +422,136 @@ TOP_Y = 270          # statement line
 PUNCH_GAP = 18
 
 
+HOOK_DUR = 1.6
+
+
+def _hook_tokens(text):
+    out = []
+    for w_ in text.split():
+        core = w_.rstrip(".,!?")
+        out.append((w_.replace("*", "").upper(), core.startswith("*") or core.endswith("*")))
+    return out
+
+
+def draw_hook(img, t, text, style):
+    """Big hook card over the dimmed opening scene. Returns new image."""
+    if t >= HOOK_DUR:
+        return img
+    fade = 1 - clamp((t - (HOOK_DUR - 0.25)) / 0.25)
+    dim = Image.new("RGB", (W, H), (0, 0, 0))
+    img = Image.blend(img, dim, 0.62 * fade)
+    toks = _hook_tokens(text)
+    px = 50 if len(" ".join(w for w, _ in toks)) < 26 else 42
+    lines, cur, curw = [], [], 0
+    for w_, acc in toks:
+        ww = text_mask(w_, px).width + px
+        if cur and curw + ww > 940:
+            lines.append(cur)
+            cur, curw = [], 0
+        cur.append((w_, acc))
+        curw += ww
+    if cur:
+        lines.append(cur)
+    lh = px * 1.7
+    y0 = 860 - len(lines) * lh / 2
+    if style == "slide":
+        y0 += 160 * (1 - ease(t / 0.35))
+    shake = 0
+    if style == "shake" and t < 0.35:
+        shake = math.sin(t * 90) * 18 * (1 - t / 0.35)
+    nwords = sum(len(l) for l in lines)
+    total_chars = sum(len(w_) for l in lines for w_, _ in l)
+    shown_words = nwords if style != "pop" else int(clamp(t / 0.6) * nwords) + 1
+    shown_chars = total_chars if style != "type" else int(clamp(t / 0.7) * total_chars) + 1
+    k = 0
+    chars = 0
+    for li, line in enumerate(lines):
+        widths = [text_mask(w_, px).width for w_, _ in line]
+        x = W / 2 - (sum(widths) + px * 0.6 * (len(line) - 1)) / 2 + shake
+        for (w_, acc), ww in zip(line, widths):
+            k += 1
+            if k > shown_words:
+                break
+            vis = w_
+            if style == "type":
+                left = shown_chars - chars
+                if left <= 0:
+                    break
+                vis = w_[:left]
+            chars += len(w_)
+            col = T["accent"] if acc else WHITE
+            if fade < 1:
+                col = mix((0, 0, 0), col, fade)
+            img.paste(col, (int(x), int(y0 + li * lh)), text_mask(vis, px))
+            x += ww + px * 0.6
+    if style == "flash" and t < 0.15:
+        img = Image.blend(img, Image.new("RGB", (W, H), (255, 255, 255)), 0.7 * (1 - t / 0.15))
+    return img
+
+
+def hook_sfx(style, n_words):
+    ev = [(0.0, "impact", 1.0), (0.0, "whoosh", 0.8), (HOOK_DUR - 0.12, "whoosh", 0.7)]
+    if style == "pop":
+        ev += [(i * 0.6 / max(1, n_words), "pop", 0.7) for i in range(n_words)]
+    elif style == "type":
+        ev += [(i * 0.1, "pop", 0.35) for i in range(7)]
+    elif style == "shake":
+        ev += [(0.02, "snap", 0.9), (0.4, "heartbeat", 0.8)]
+    elif style == "slide":
+        ev += [(0.05, "swell", 0.6)]
+    elif style == "flash":
+        ev += [(0.0, "flash", 1.0)]
+    return ev
+
+
 def render(spec, draw, events, out_path, seed=0):
-    """spec: dict with dur, top (statement line, optional), punch (optional), punch_at (0..1, default 0.66).
-    draw(c, t, spec): draws the scene. events: list of (t, kind[, gain]) for audio.
-    Returns thumb_offset (ms)."""
+    """spec: dict with dur, top, punch, punch_at, hook, hook_style, theme.
+    draw(c, t, spec): draws the scene. events: (t, kind[, gain]) for audio.
+    Returns thumb_offset (ms) = a frame showing the hook."""
     import audio
+    set_theme(spec.get("theme", seed))
     dur = float(spec["dur"])
+    punch_t = spec.get("punch_at", 0.66) * dur
+    hook, style = spec.get("hook"), spec.get("hook_style", "pop")
+    ev = []
+    for e in events:
+        g = e[2] if len(e) > 2 else 0.5
+        ev.append((e[0], e[1], min(1.0, g * 1.8)))
+    if hook:
+        ev += hook_sfx(style, len(hook.split()))
+    if spec.get("punch"):
+        ev += [(punch_t, "impact", 0.8), (punch_t, "flash", 0.6)]
+    ev += [(dur - 1.4, "chime", 0.6)]
     wav = out_path + ".wav"
-    audio.build_audio(wav, dur, seed, events)
+    audio.build_audio(wav, dur, seed, ev)
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
            "-r", str(FPS), "-i", "-", "-i", wav, "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-shortest",
            "-movflags", "+faststart", out_path]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    punch_t = spec.get("punch_at", 0.66) * dur
+    top_from = HOOK_DUR - 0.1 if hook else 0
     for fi in range(int(dur * FPS)):
         t = fi / FPS
         c = Canvas()
+        c.particles(t)
         draw(c, t, spec)
         y = TOP_Y
-        if spec.get("top"):
+        if spec.get("top") and t >= top_from:
             y = c.lines(spec["top"], W / 2, y, 30, spec.get("top_color", WHITE))
         if spec.get("punch") and t >= punch_t:
-            c.lines(spec["punch"], W / 2, y + PUNCH_GAP, 30, spec.get("punch_color", GOLD))
+            c.lines(spec["punch"], W / 2, y + PUNCH_GAP, 30, spec.get("punch_color", T["accent"]))
         if t > dur - 1.4:
-            c.text("FOLLOW FOR DAILY 1% BETTER", W / 2, 1560, 20, SUB)
-        img = watermark(c.finish(t), t)
+            c.text("FOLLOW FOR DAILY 1% BETTER", W / 2, 1560, 20, mix(SUB, T["accent2"], 0.5))
+        img = c.finish(t)
+        if hook:
+            img = draw_hook(img, t, hook, style)
+        img = watermark(img, t)
         proc.stdin.write(img.tobytes())
     proc.stdin.close()
     if proc.wait() != 0:
         raise RuntimeError("ffmpeg failed")
     os.remove(wav)
-    return int(min(dur - 0.5, punch_t + 1.0) * 1000)
+    return 1000 if hook else int(min(dur - 0.5, punch_t + 1.0) * 1000)
 
 
 if __name__ == "__main__":
