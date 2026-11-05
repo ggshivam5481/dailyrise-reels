@@ -88,11 +88,40 @@ def make_spec(F, used, rnd, last):
     return spec
 
 
+# 6 AM = start-the-day energy, 6 PM = end-of-day reflection
+MORNING_TOPICS = {"discipline", "habits", "focus", "growth"}
+
+
+def topic_of(e):
+    if e.get("topic"):
+        return e["topic"]
+    import seo
+    for name, (kw, _) in seo.NV_TOPIC.items():
+        if kw in e.get("caption", ""):
+            return name
+    return None
+
+
+def reslot(q):
+    """Keep the same time slots but give 6 AM slots to morning topics and 6 PM slots to evening topics."""
+    if not q:
+        return q
+    slots = sorted(e["slot"] for e in q)
+    am = [e for e in q if topic_of(e) in MORNING_TOPICS]
+    pm = [e for e in q if topic_of(e) not in MORNING_TOPICS]
+    for sl in slots:
+        want_am = datetime.fromisoformat(sl).hour < 12
+        src = am if (want_am and am) or not pm else pm
+        src.pop(0)["slot"] = sl
+    q.sort(key=lambda e: e["slot"])
+    return q
+
+
 def batch():
     import nv
     import seo
     F = formats()
-    s, q = state(), load(QUEUE, [])
+    s, q = state(), reslot(load(QUEUE, []))
     room = max(0, MAX_QUEUE - len(q))
     n = min(BATCH_SIZE, room)
     print(f"queue has {len(q)}, making {n} new reels (cap {MAX_QUEUE})")
@@ -104,7 +133,15 @@ def batch():
     after = max([datetime.fromisoformat(e["slot"]) for e in q] + [datetime.now(IST)])
     os.makedirs("out", exist_ok=True)
     for _ in range(n):
-        spec = make_spec(F, used, rnd, last)
+        slot = next_slot(after)
+        morning = slot.hour < 12
+        for _try in range(60):  # pick a script whose topic fits the time of day
+            snapshot = set(used)
+            spec = make_spec(F, used, rnd, last)
+            if (spec.get("topic") in MORNING_TOPICS) == morning:
+                break
+            used.clear()
+            used.update(snapshot)
         last = spec["format"]
         s["counter"] += 1
         name = f"reel_{s['counter']:05d}.mp4"
@@ -113,9 +150,9 @@ def batch():
         thumb = nv.render(spec, fmt["draw"], fmt["events"](spec), path, seed=s["counter"])
         if not os.environ.get("NO_UPLOAD"):
             gh("release", "upload", RELEASE, path, "--clobber")
-        after = next_slot(after)
+        after = slot
         q.append({"file": name, "slot": after.isoformat(), "template": spec["format"], "key": spec["key"],
-                  "thumb": thumb, "caption": seo.caption_nv(spec)})
+                  "topic": spec.get("topic"), "thumb": thumb, "caption": seo.caption_nv(spec)})
         s["used"] = sorted(used)
         save(QUEUE, q)
         save(STATE, s)
@@ -124,7 +161,7 @@ def batch():
 
 def post():
     from instagram import IG
-    s, q = state(), load(QUEUE, [])
+    s, q = state(), reslot(load(QUEUE, []))
     now = datetime.now(IST)
     due = [e for e in q if datetime.fromisoformat(e["slot"]) <= now + timedelta(minutes=45)]
     if not due:
