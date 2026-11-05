@@ -54,3 +54,46 @@ def caption(reel, rnd=None):
         " ".join(tags),
     ]
     return "\n".join(lines)
+
+
+# ---------------- captions for the minimal (nv) formats ----------------
+NV_TOPIC = {
+    "discipline": ("discipline, self control aur roz kaam karne ki aadat",
+                   ["#discipline", "#selfdiscipline", "#consistency", "#nevergiveup"]),
+    "habits": ("daily habits, chhote kadam aur 1% better every day",
+               ["#dailyhabits", "#atomichabits", "#1percentbetter", "#habits"]),
+    "mindset": ("success mindset, soch badlo zindagi badlegi",
+                ["#mindset", "#growthmindset", "#mindsetshift", "#successmindset"]),
+    "money": ("paisa, time aur life ki asli value",
+              ["#moneymindset", "#financialfreedom", "#wealthmindset", "#lifelessons"]),
+    "focus": ("focus, phone addiction aur distraction se bahar nikalna",
+              ["#focus", "#deepwork", "#productivity", "#digitaldetox"]),
+    "time": ("time ki value aur procrastination chhodna",
+             ["#timemanagement", "#procrastination", "#timeiseverything", "#productivity"]),
+    "fear": ("dar, overthinking aur comfort zone se bahar nikalna",
+             ["#overthinking", "#comfortzone", "#courage", "#takeaction"]),
+    "growth": ("self improvement aur roz thoda better banna",
+               ["#selfimprovement", "#personalgrowth", "#selfgrowth", "#levelup"]),
+}
+NV_GENERAL = ["#motivation", "#hindimotivation", "#motivationinhindi", "#stickmananimation", "#reelsindia",
+              "#motivationalreels", "#wisdom"]
+
+
+def caption_nv(spec, rnd=None):
+    rnd = rnd or random.Random(spec.get("key", ""))
+    kw, tags = NV_TOPIC.get(spec.get("topic"), NV_TOPIC["growth"])
+    tags = rnd.sample(tags, 2) + rnd.sample(NV_GENERAL[:3], 1) + rnd.sample(NV_GENERAL[3:], 2)
+    lines = [
+        spec.get("caption_line") or (spec.get("punch") or spec.get("top") or "").capitalize(),
+        "",
+        spec.get("ig", ""),
+        "",
+        f"Daily motivation in Hindi: {kw}. Roz ek naya stickman reel, 1% better banne ke liye.",
+        "",
+        rnd.choice(CTAS),
+        "👉 Follow @dailyrise.reels — roz 1% better.",
+        "",
+        " ".join(tags),
+    ]
+    out = [l for i, l in enumerate(lines) if l or (i and lines[i - 1])]
+    return chr(10).join(out)

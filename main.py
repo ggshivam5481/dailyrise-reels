@@ -65,10 +65,27 @@ def gh(*args):
     subprocess.run(["gh", *args], check=True)
 
 
+FORMAT_WEIGHTS = {"duel": 4, "split": 3, "stack": 2, "tiers": 2, "failstairs": 1, "kills": 1}
+
+
+def formats():
+    import formats_a
+    import formats_b
+    return {**formats_a.FORMATS, **formats_b.FORMATS}
+
+
+def make_spec(F, used, rnd, last):
+    names = [n for n in FORMAT_WEIGHTS if n in F and n != last] or list(F)
+    name = rnd.choices(names, weights=[FORMAT_WEIGHTS.get(n, 1) for n in names])[0]
+    spec = F[name]["make"](rnd, used)
+    spec["format"] = name
+    return spec
+
+
 def batch():
-    import ideas
-    import render
+    import nv
     import seo
+    F = formats()
     s, q = state(), load(QUEUE, [])
     room = max(0, MAX_QUEUE - len(q))
     n = min(BATCH_SIZE, room)
@@ -81,21 +98,22 @@ def batch():
     after = max([datetime.fromisoformat(e["slot"]) for e in q] + [datetime.now(IST)])
     os.makedirs("out", exist_ok=True)
     for _ in range(n):
-        reel = ideas.new_reel(used, rnd, last)
-        last = reel["template"]
+        spec = make_spec(F, used, rnd, last)
+        last = spec["format"]
         s["counter"] += 1
         name = f"reel_{s['counter']:05d}.mp4"
         path = os.path.join("out", name)
-        thumb = render.render(reel, path, seed=s["counter"])
+        fmt = F[spec["format"]]
+        thumb = nv.render(spec, fmt["draw"], fmt["events"](spec), path, seed=s["counter"])
         if not os.environ.get("NO_UPLOAD"):
             gh("release", "upload", RELEASE, path, "--clobber")
         after = next_slot(after)
-        q.append({"file": name, "slot": after.isoformat(), "template": reel["template"], "key": reel["key"],
-                  "thumb": thumb, "caption": seo.caption(reel)})
+        q.append({"file": name, "slot": after.isoformat(), "template": spec["format"], "key": spec["key"],
+                  "thumb": thumb, "caption": seo.caption_nv(spec)})
         s["used"] = sorted(used)
         save(QUEUE, q)
         save(STATE, s)
-        print(f"{name}  {reel['template']:8s}  {after:%d %b %H:%M} IST  {reel['caption']}")
+        print(f"{name}  {spec['format']:10s}  {after:%d %b %H:%M} IST  {spec.get('top')} / {spec.get('punch')}")
 
 
 def post():
@@ -140,16 +158,18 @@ def comments():
 
 
 def preview(n):
-    import ideas
-    import render
+    import nv
     import seo
-    used, rnd, last = set(), random.Random(42), None
+    F, used, rnd, last = formats(), set(), random.Random(42), None
     os.makedirs("out", exist_ok=True)
     for i in range(n):
-        reel = ideas.new_reel(used, rnd, last)
-        last = reel["template"]
-        render.render(reel, f"out/preview_{i}.mp4", seed=i)
-        print(f"--- preview_{i}.mp4 [{reel['template']}]\n{seo.caption(reel)}\n")
+        spec = make_spec(F, used, rnd, last)
+        last = spec["format"]
+        fmt = F[spec["format"]]
+        nv.render(spec, fmt["draw"], fmt["events"](spec), f"out/preview_{i}.mp4", seed=i)
+        print(f"--- preview_{i}.mp4 [{spec['format']}]")
+        print(seo.caption_nv(spec))
+        print()
 
 
 if __name__ == "__main__":
