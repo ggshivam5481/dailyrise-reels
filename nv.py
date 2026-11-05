@@ -454,7 +454,7 @@ def draw_hook(img, t, text, style, kicker=None):
     """Big catchy hook over the dimmed, zooming opening scene. Returns new image."""
     if t >= HOOK_DUR:
         return img
-    fade = 1 - clamp((t - (HOOK_DUR - 0.25)) / 0.25)
+    fade = 1.0
     img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.6 * fade)
     d = ImageDraw.Draw(img)
     toks = _hook_tokens(text)
@@ -551,8 +551,8 @@ def _beat_times(ev):
 def camera(img, t, dur, shakes, punch_t):
     """Slow push-in (starts zoomed during the hook), beat bumps, and shake on impacts."""
     z = 1.0 + 0.05 * ease(t / dur)
-    if t < HOOK_DUR:
-        z += 0.12 * (1 - ease(t / HOOK_DUR))
+    if t < 0.5:
+        z += 0.06 * (1 - ease(t / 0.5))  # quick punch-in on frame 0
     if 0 <= t - punch_t < 0.3:
         z += 0.05 * (1 - (t - punch_t) / 0.3)
     dx = dy = 0.0
@@ -664,9 +664,11 @@ def render(spec, draw, events, out_path, seed=0):
     Returns thumb_offset (ms) = a frame showing the hook."""
     import audio
     set_theme(spec.get("theme", seed))
-    dur = float(spec["dur"])
-    punch_t = spec.get("punch_at", 0.66) * dur
+    story = float(spec["dur"])
+    punch_t = spec.get("punch_at", 0.66) * story
     hook, style = spec.get("hook"), spec.get("hook_style", "pop")
+    end_t = story  # the hook card plays after the story, as the closing card
+    dur = story + (HOOK_DUR if hook else 0)
     if style not in HOOK_STYLES:
         style = "pop"
     kicker = KICKERS[seed % len(KICKERS)] if hook else None
@@ -675,12 +677,12 @@ def render(spec, draw, events, out_path, seed=0):
         g = e[2] if len(e) > 2 else 0.5
         ev.append((e[0], e[1], min(1.0, g * 1.8)))
     if hook:
-        ev += [e for e in hook_sfx(style, len(hook.split())) if e[2] > 0]
-        ev += [(HOOK_DUR - 0.05, "pop", 0.5)]  # top line types in
+        ev += [(end_t + e[0], e[1], e[2]) for e in hook_sfx(style, len(hook.split())) if e[2] > 0]
+    ev += [(0.0, "impact", 0.8), (0.0, "whoosh", 0.7), (0.05, "pop", 0.5)]  # start straight into the action
     if spec.get("punch"):
         ev += [(punch_t - 1.0, "riser", 0.7), (punch_t, "impact", 0.9), (punch_t, "flash", 0.7),
                (punch_t + 0.1, "chime", 0.6)]
-    ev += [(dur - 1.4, "chime", 0.6)]
+    ev += [(story - 1.4, "chime", 0.6)]
     beats = _beat_times(ev)
     shakes = [(e[0], 0.25 + 0.6 * e[2]) for e in ev if e[1] in ("impact", "thud", "snap") and e[0] > 0.1]
     wav = out_path + ".wav"
@@ -690,12 +692,13 @@ def render(spec, draw, events, out_path, seed=0):
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-shortest",
            "-movflags", "+faststart", out_path]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    top_from = HOOK_DUR - 0.1 if hook else 0
+    top_from = 0
     for fi in range(int(dur * FPS)):
         t = fi / FPS
+        st = min(t, story - 1 / FPS)  # story time; frozen on the last story frame under the end card
         c = Canvas()
         c.particles(t)
-        draw(c, t, spec)
+        draw(c, st, spec)
         y = TOP_Y
         top = spec.get("top")
         if top and t >= top_from:
@@ -706,7 +709,7 @@ def render(spec, draw, events, out_path, seed=0):
             k = clamp((t - punch_t) / 0.22)
             px = int(30 + 14 * (1 - ease(k)))  # slam in big, settle
             c.lines(spec["punch"], W / 2, y + PUNCH_GAP, px, spec.get("punch_color", T["accent"]))
-        if t > dur - 1.4:
+        if story - 1.4 < t < story:
             c.text("FOLLOW FOR DAILY 1% BETTER", W / 2, 1560, 20, mix(SUB, T["accent2"], 0.5))
         img = c.finish(t)
         img = ripples(img, t, beats, seed)
@@ -714,10 +717,10 @@ def render(spec, draw, events, out_path, seed=0):
         img = shooting_stars(img, t, seed)
         if spec.get("punch"):
             img = confetti_burst(img, t, punch_t, seed)
-        img = camera(img, t, dur, shakes, punch_t)
+        img = camera(img, st, story, shakes, punch_t)
         img = vignette_pulse(img, t, beats)
-        if hook:
-            img = draw_hook(img, t, hook, style, kicker)
+        if hook and t >= end_t:
+            img = draw_hook(img, t - end_t, hook, style, kicker)
         img = progress_bar(img, t, dur)
         img = watermark(img, t)
         proc.stdin.write(img.tobytes())
@@ -725,7 +728,7 @@ def render(spec, draw, events, out_path, seed=0):
     if proc.wait() != 0:
         raise RuntimeError("ffmpeg failed")
     os.remove(wav)
-    return 1000 if hook else int(min(dur - 0.5, punch_t + 1.0) * 1000)
+    return int((end_t + 1.0) * 1000) if hook else int(min(dur - 0.5, punch_t + 1.0) * 1000)
 
 
 if __name__ == "__main__":
