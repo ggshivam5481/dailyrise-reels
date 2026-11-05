@@ -21,6 +21,9 @@
   "a2|split|3|5",
   "a2|split|8|1",
   "a2|split|8|2",
+  "a3line|duel|EVERY RUPEE IS A WORKER.|SEND IT TO WORK.",
+  "a3|duel|4|2|4",
+  "a3|duel|4|2|4|2",
   "b2|kills|build|READING/PATIENCE/GRATITUDE/EFFORT/LISTENING/SLEEP",
   "b2|kills|build|SAVING/EFFORT/FOCUS/WALKING/EXERCISE/PLANNING",
   "b2|kills|kill|LATE NIGHTS/DOUBT/EGO/ANGER/SCROLLING/WAITING",
@@ -75,6 +78,7 @@
   "hook|Where did your *day* go?",
   "hook|You are *closer* than you think.",
   "hook|Your excuses have *excuses*.",
+  "hook|Your future self is *watching*.",
   "hook|Your habits are *voting*.",
   "hook|Your mind is the *cage*.",
   "kills|b|GRATITUDE/ROUTINE/SLEEP/EFFORT/SILENCE/CALM",
@@ -85,6 +89,7 @@
   "script|1 PAGE A DAY.|1 YEAR = 365 PAGES.",
   "script|BUILD THESE. DAILY.|None",
   "script|DREAMS NEED WATER.|SMALL DAILY CARE.",
+  "script|EVERY RUPEE IS A WORKER.|SEND IT TO WORK.|TRENDY|WEALTHY|RS|RS|money",
   "script|HE STOPPED AT 5 METERS.|GOLD WAS AT 6.",
   "script|None|5 MINUTES OF PLANNING.",
   "script|None|HOME FOOD. RICH BODY.",
@@ -108,5 +113,5 @@
  ],
  "replied": [],
  "posted": [],
- "counter": 90
+ "counter": 91
 }
