@@ -79,10 +79,10 @@ def make_spec(F, used, rnd, last):
     name = rnd.choices(names, weights=[FORMAT_WEIGHTS.get(n, 1) for n in names])[0]
     import hooks
     import nv
-    for _try in range(40):  # same on-screen script (top + punch) must not repeat while fresh ones exist
+    for _try in range(120):  # same on-screen script (top + punch) must not repeat while fresh ones exist
         snap = set(used)
         spec = F[name]["make"](rnd, used)
-        text_key = "script|" + str(spec.get("top")) + "|" + str(spec.get("punch"))
+        text_key = "script|" + (spec.get("script_text") or (str(spec.get("top")) + "|" + str(spec.get("punch"))))
         if text_key not in used:
             break
         used.clear()
