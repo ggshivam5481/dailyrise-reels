@@ -2,8 +2,12 @@ name: post-reel
 
 on:
   schedule:
-    - cron: "30 0 * * *"    # 06:00 IST
-    - cron: "30 12 * * *"   # 18:00 IST
+    # GitHub often starts scheduled runs late, so try 4 times around each slot.
+    # The first run posts the due reel; later runs find nothing due and exit.
+    - cron: "20,35,50 0 * * *"   # 05:50 / 06:05 / 06:20 IST
+    - cron: "5 1 * * *"          # 06:35 IST
+    - cron: "20,35,50 12 * * *"  # 17:50 / 18:05 / 18:20 IST
+    - cron: "5 13 * * *"         # 18:35 IST
   workflow_dispatch:
 
 permissions:
