@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
 SLOTS = [(6, 0), (18, 0)]
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "15"))
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "20"))
 MAX_QUEUE = int(os.environ.get("MAX_QUEUE", "60"))
 RELEASE = "queue"
 STATE, QUEUE = "state.json", "queue.json"
@@ -85,12 +85,12 @@ def batch():
         s["counter"] += 1
         name = f"reel_{s['counter']:05d}.mp4"
         path = os.path.join("out", name)
-        render.render(reel, path, seed=s["counter"])
+        thumb = render.render(reel, path, seed=s["counter"])
         if not os.environ.get("NO_UPLOAD"):
             gh("release", "upload", RELEASE, path, "--clobber")
         after = next_slot(after)
         q.append({"file": name, "slot": after.isoformat(), "template": reel["template"], "key": reel["key"],
-                  "caption": seo.caption(reel)})
+                  "thumb": thumb, "caption": seo.caption(reel)})
         s["used"] = sorted(used)
         save(QUEUE, q)
         save(STATE, s)
@@ -108,10 +108,12 @@ def post():
     e = min(due, key=lambda x: x["slot"])
     os.makedirs("out", exist_ok=True)
     gh("release", "download", RELEASE, "-p", e["file"], "-D", "out", "--clobber")
-    import cover
-    src = os.path.join("out", e["file"])
-    final = os.path.join("out", "final_" + e["file"])
-    thumb = cover.add_cover(src, e["caption"], final)
+    final = os.path.join("out", e["file"])
+    thumb = e.get("thumb")
+    if thumb is None:  # older queue entries without a built-in hook cover
+        import cover
+        final = os.path.join("out", "final_" + e["file"])
+        thumb = cover.add_cover(os.path.join("out", e["file"]), e["caption"], final)
     ig = IG(os.environ["IG_USER_ID"], os.environ["IG_TOKEN"])
     media_id = ig.publish_reel(final, e["caption"], thumb_offset=thumb)
     print(f"posted {e['file']} ({e['key']}) -> {media_id}")

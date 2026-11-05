@@ -80,7 +80,14 @@ def spaced(d, cx, y, s, f, fill, sp=5):
         x += d.textlength(c, font=f) + sp
 
 
+CAPTION_ALPHA = 1.0  # set by render(): 0 while the hook is on screen, then fades in
+
+
 def caption(d, text, y=250, size=44, color=WHITE):
+    if CAPTION_ALPHA <= 0:
+        return
+    if CAPTION_ALPHA < 1:
+        color = tuple(int(16 + (c - 16) * CAPTION_ALPHA) for c in color)
     f = font(size)
     words, lines, cur = text.upper().split(), [], ""
     for w in words:
@@ -145,9 +152,28 @@ def flat_ground(img, y=GROUND):
     d.line([0, y, W, y], fill=(78, 88, 106), width=3)
 
 
-def watermark(img):
-    d = ImageDraw.Draw(img)
-    spaced(d, W / 2, H - 120, HANDLE, font(32), (96, 104, 118), 3)
+_wm = None
+
+
+def watermark(img, t):
+    """Floating handle: drifts slowly over the whole frame on a smooth Lissajous path, semi-transparent,
+    so it protects the reel without hiding the scene."""
+    global _wm
+    if _wm is None:
+        f = font(30)
+        tw = int(text_w(ImageDraw.Draw(img), HANDLE, f, 3)) + 8
+        _wm = Image.new("L", (tw, 44), 0)
+        x = 4
+        dm = ImageDraw.Draw(_wm)
+        for c in HANDLE:
+            dm.text((x, 4), c, font=f, fill=255)
+            x += dm.textlength(c, font=f) + 3
+        _wm = _wm.point(lambda v: int(v * 0.30))
+    w, h = _wm.size
+    x = (W - w) / 2 + (W - w - 120) / 2 * math.sin(t * 0.37 + 0.6)
+    y = (H - h) / 2 + (H - h - 260) / 2 * math.sin(t * 0.23 + 2.1)
+    img.paste((235, 238, 245), (int(x), int(y)), _wm)
+    return img
 
 
 _bg_cache = {}
@@ -157,7 +183,6 @@ def bg(key, builder):
     if key not in _bg_cache:
         im = builder()
         im = vignette(im)
-        watermark(im)
         _bg_cache[key] = im
     return _bg_cache[key]
 
@@ -578,40 +603,192 @@ TEMPLATES = {
     "leap": (t_leap, lambda p: ("leap", leap_bg)),
 }
 
-# ---------------- audio ----------------
-CHORDS = [(110, 220, 261.63, 329.63), (98, 196, 246.94, 293.66), (87.31, 174.61, 220, 261.63),
-          (116.54, 233.08, 277.18, 349.23), (103.83, 207.65, 246.94, 311.13)]
-
-
-def music_filter(dur, seed):
-    a, b, c, e = CHORDS[seed % len(CHORDS)]
-    expr = (f"0.10*sin(2*PI*{a}*t)*(0.7+0.3*sin(2*PI*0.2*t))"
-            f"+0.05*sin(2*PI*{b}*t)"
-            f"+0.045*sin(2*PI*{c}*t)*(0.5+0.5*sin(2*PI*0.33*t))"
-            f"+0.04*sin(2*PI*{e}*t)*(0.5+0.5*sin(2*PI*0.5*t+1))")
-    return (f"aevalsrc='{expr}':s=44100:d={dur:.2f},aecho=0.8:0.8:300|620:0.35|0.25,lowpass=f=2400,"
-            f"afade=t=in:d=1.2,afade=t=out:st={max(0.0, dur - 1.5):.2f}:d=1.5")
-
-
 # ---------------- render ----------------
+# Structure: cold open (climax moment + big hook text) -> story with a new camera shot every 2 s -> CTA card.
+HOOK_DUR, CTA_DUR, SHOT, THUMB_MS = 1.8, 2.4, 2.0, 900
+CLIMAX = {"door": 0.86, "boulder": 0.62, "crowd": 0.55, "stairs": 0.8, "compare": 0.45, "carry": 0.6, "leap": 0.58}
+
+
+def story_events(reel):
+    """SFX / shakes / flashes in story time (0..dur), synced to each template's beats."""
+    dur, tp = float(reel.get("dur", 10)), reel["template"]
+    sfx, shakes, flashes = [], [], []
+    if tp == "door":
+        sfx += [(0.6 * dur, "snap", 1.0), (0.6 * dur + 0.05, "impact", 0.6), (0.86 * dur, "riser", 0.8),
+                (0.86 * dur, "flash", 1.0)]
+        shakes += [(0.6 * dur, 0.6)]
+    elif tp == "boulder":
+        sfx += [(t, "rumble", 0.55) for t in (2.2, 5.0, 7.8)] + [(0.5 * dur, "heartbeat", 0.7)]
+        shakes += [(t, 0.18) for t in (2.2, 5.0, 7.8)]
+    elif tp == "crowd":
+        sfx += [(0.5 + 0.5 * i, "step", 0.3) for i in range(int((dur - 1) / 0.5))]
+        sfx += [(0.55 * dur, "heartbeat", 0.8)]
+    elif tp == "stairs":
+        n, climb = len(reel["labels"]), dur * 0.82
+        sfx += [((i + 0.5) / (n - 0.5) * climb, "step", 0.8) for i in range(n - 1)]
+        sfx += [(climb - 0.4, "swell", 0.7), (climb, "flash", 1.0), (climb + 0.05, "impact", 0.5)]
+        shakes += [(climb, 0.4)]
+        flashes += [(climb, 0.35)]
+    elif tp == "compare":
+        sfx += [(0.3, "pop", 0.7), (0.6, "pop", 0.7), (0.5 * dur, "heartbeat", 0.7)]
+    elif tp == "carry":
+        drop = (0.55 + 0.25 * 0.45) * dur
+        sfx += [(0.55 * dur, "whoosh", 0.6), (drop, "thud", 1.0), (drop + 0.02, "impact", 0.7),
+                (drop + 0.6, "flash", 0.6)]
+        shakes += [(drop, 0.9)]
+    elif tp == "leap":
+        sfx += [(0.5 * dur, "riser", 0.9), (0.5 * dur, "whoosh", 0.9), (0.72 * dur, "impact", 1.0),
+                (0.74 * dur, "flash", 0.9)]
+        shakes += [(0.72 * dur, 1.0)]
+        flashes += [(0.73 * dur, 0.45)]
+    return sfx, shakes, flashes
+
+
+def events_for(reel):
+    """All events in final-video time. Returns (sfx, shakes, flashes, cut_times)."""
+    dur = float(reel.get("dur", 10))
+    sfx, shakes, flashes = story_events(reel)
+    o = HOOK_DUR
+    sfx = [(t + o, k, g) for t, k, g in sfx]
+    shakes = [(t + o, k) for t, k in shakes]
+    flashes = [(t + o, k) for t, k in flashes]
+    sfx += [(0.0, "impact", 1.0), (0.02, "whoosh", 0.8), (o - 0.05, "whoosh", 0.7)]
+    shakes += [(0.18, 0.9)]
+    cuts = [o + SHOT * i for i in range(1, int(dur / SHOT) + 1) if SHOT * i < dur - 0.5]
+    sfx += [(c, "whoosh", 0.28) for c in cuts]
+    sfx += [(o + dur, "swell", 0.6), (o + dur + 0.25, "chime", 0.9), (o + dur + 0.7, "pop", 0.5),
+            (o + dur + 1.0, "pop", 0.5)]
+    return sfx, shakes, flashes, [o] + cuts
+
+
+def focus(reel, t, dur):
+    """Rough position of the main stickman, so close-up shots keep him in frame."""
+    tp, u = reel["template"], t / dur
+    if tp == "door":
+        return (470 + 340 * ease((u - 0.6) / 0.28), 1150)
+    if tp == "boulder":
+        xb = 400 + 170 * u
+        return (xb - 120, slope_y(xb) - 170)
+    if tp == "stairs":
+        n = len(reel["labels"])
+        k = clamp(t / (dur * 0.82)) * (n - 0.5)
+        return (STEP_X + 60 + k * STEP_W, GROUND - k * STEP_H - 260)
+    if tp == "carry":
+        if u < 0.55:
+            return (470, 1080)
+        return (560 + 700 * ease(((u - 0.55) / 0.45 - 0.25) / 0.75), 1150)
+    if tp == "leap":
+        if u < 0.3:
+            return (300, 1150)
+        if u < 0.5:
+            return (150 + 250 * (u - 0.3) / 0.2, 1150)
+        if u < 0.72:
+            k = (u - 0.5) / 0.22
+            return (400 + 420 * k, 1150 - 300 * math.sin(math.pi * k))
+        return (820, 1110)
+    return (640, 1150)
+
+
+# (zoom at start, zoom at end, horizontal pan in px over the shot)
+SHOT_TYPES = {"wide": (1.0, 1.06, 0), "medium": (1.22, 1.3, 0), "close": (1.5, 1.62, 0),
+              "pan_r": (1.3, 1.3, 260), "pan_l": (1.3, 1.3, -260)}
+SHOT_ORDER = ["wide", "close", "pan_r", "medium", "close", "pan_l", "wide", "close"]
+
+
+def shot_camera(img, kind, v, fxy, t, shakes):
+    z0, z1, pan = SHOT_TYPES[kind]
+    z = z0 + (z1 - z0) * ease(v)
+    cw, ch = W / z, H / z
+    cx = fxy[0] + pan * (v - 0.5)
+    cy = fxy[1] - ch * 0.12
+    for st, strength in shakes:
+        a = t - st
+        if 0 <= a < 0.35:
+            k = (1 - a / 0.35) ** 2 * strength
+            cx += math.sin(a * 91.0 + st * 7) * 26 * k
+            cy += math.cos(a * 77.0 + st * 3) * 20 * k
+    if z < 1.0005:
+        z, cw, ch = 1.0005, W / 1.0005, H / 1.0005
+    x0 = min(max(cx - cw / 2, 0), W - cw)
+    y0 = min(max(cy - ch / 2, 0), H - ch)
+    return img.resize((W, H), Image.BILINEAR, box=(x0, y0, x0 + cw, y0 + ch))
+
+
+def _flash_amount(t, flashes, cuts):
+    a = 0.0
+    for ft, peak in flashes:
+        if 0 <= t - ft < 0.6:
+            a = max(a, peak * (1 - (t - ft) / 0.6))
+    for c in cuts:
+        if 0 <= t - c < 0.12:
+            a = max(a, 0.22 * (1 - (t - c) / 0.12))
+    return a
+
+
 def render(reel, out_path, seed=0):
+    """Render the reel. Returns thumb_offset in ms (a frame inside the hook, used as the cover)."""
+    global CAPTION_ALPHA
+    import audio
+    import fx
     fn, bgf = TEMPLATES[reel["template"]]
     key, builder = bgf(reel)
     base = bg(key, builder)
     dur = float(reel.get("dur", 10))
+    total = HOOK_DUR + dur + CTA_DUR
+    sfx, shakes, flashes, cuts = events_for(reel)
+    wav = out_path + ".wav"
+    audio.build_audio(wav, total, seed, sfx)
+    hook = reel.get("hook") or reel["caption"]
+    cap_y = 260 if reel["template"] == "compare" else 250
+    rnd = random.Random(seed)
+    k0 = rnd.randrange(len(SHOT_ORDER))
+    order = SHOT_ORDER[k0:] + SHOT_ORDER[:k0]
+    climax = CLIMAX.get(reel["template"], 0.7) * dur
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
-           "-r", str(FPS), "-i", "-", "-f", "lavfi", "-i", music_filter(dur, seed),
+           "-r", str(FPS), "-i", "-", "-i", wav,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-           "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest", "-movflags", "+faststart", out_path]
+           "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-shortest", "-movflags", "+faststart", out_path]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    for fi in range(int(dur * FPS)):
+    last = None
+    for fi in range(int(total * FPS)):
         t = fi / FPS
-        img = base.copy()
-        d = ImageDraw.Draw(img)
-        dust(d, t)
-        fn(img, d, t, dur, reel)
+        if t < HOOK_DUR + dur:
+            if t < HOOK_DUR:  # cold open: the climax moment in slow motion, close up
+                tt = min(dur - 0.05, climax - 0.4 + t * 0.5)
+                kind, v = "close", t / HOOK_DUR
+            else:
+                tt = t - HOOK_DUR
+                i = int(tt / SHOT)
+                kind, v = order[i % len(order)], (tt - i * SHOT) / SHOT
+                if reel["template"] == "compare" and kind != "wide":
+                    kind = "medium"
+            img = base.copy()
+            d = ImageDraw.Draw(img)
+            dust(d, tt)
+            img = fx.light_rays(img, tt)
+            d = ImageDraw.Draw(img)
+            CAPTION_ALPHA = 0
+            fn(img, d, tt, dur, reel)
+            fxy = focus(reel, tt, dur)
+            if reel["template"] == "compare":
+                fxy = (540, 760 if int(t / SHOT) % 2 else 1480)
+            img = shot_camera(img, kind, v, fxy, t, shakes)
+            fa = _flash_amount(t, flashes, cuts)
+            if fa > 0:
+                img = fx.flash(img, fa)
+            CAPTION_ALPHA = clamp((t - HOOK_DUR - 0.1) / 0.5)
+            caption(ImageDraw.Draw(img), reel["caption"], y=cap_y)
+            img = fx.ornaments(img, t)
+            img = fx.grade(img, t)
+            last = img
+            if t < HOOK_DUR:
+                img = fx.hook(img, t, hook, HOOK_DUR)
+        else:
+            img = fx.grade(fx.cta(last, (t - HOOK_DUR - dur) / CTA_DUR), t)
+        img = watermark(img, t)
         proc.stdin.write(img.tobytes())
     proc.stdin.close()
     if proc.wait() != 0:
         raise RuntimeError("ffmpeg failed")
-    return dur
+    os.remove(wav)
+    return THUMB_MS

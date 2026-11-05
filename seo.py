@@ -35,7 +35,8 @@ CTAS = [
 def caption(reel, rnd=None):
     rnd = rnd or random.Random(reel.get("key", ""))
     topic = TOPIC.get(reel["template"], TOPIC["stairs"])
-    hook = rnd.choice(HOOKS).format(c=reel["caption"].rstrip("."))
+    first = (reel.get("hook") or reel["caption"]).replace("*", "").rstrip(".")
+    hook = rnd.choice(HOOKS).format(c=first)
     tags = [t.replace(" ", "") for t in rnd.sample(topic["tags"], 2)]
     tags += rnd.sample(GENERAL[:5], 2) + [rnd.choice(GENERAL[5:])]
     lines = [
@@ -47,7 +48,8 @@ def caption(reel, rnd=None):
         f"ke liye roz ek naya stickman reel.",
         "",
         rnd.choice(CTAS),
-        "👉 Follow @dailyrise.reels for daily 1% better.",
+        "🔁 Share karo us dost ko jise ye sunna chahiye.",
+        "👉 Follow @dailyrise.reels — roz 1% better.",
         "",
         " ".join(tags),
     ]

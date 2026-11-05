@@ -73,6 +73,24 @@ LEAP = {
 }
 
 
+HOOKS = {
+    "door": ["What's *really* holding you back?", "Your excuse is a *rope*.", "Cut the rope. *Walk in.*",
+             "The door was *never* locked.", "You're tied to your *comfort*."],
+    "boulder": ["This is why you feel *stuck*.", "Nobody claps for the *grind*.", "Hard work looks *boring*.",
+                "Keep pushing. *Nobody* sees it yet.", "The hill gets *easier*. Not today."],
+    "crowd": ["Everyone is *scrolling*.", "Be the *1%* who doesn't.", "Look up. *Everyone* else isn't.",
+              "The crowd is going the *wrong* way.", "Stop following the *crowd*."],
+    "stairs": ["*1%* a day changes everything.", "Small steps. *Big* life.", "Nobody skips the *stairs*.",
+               "Day 1 or *one day*?", "Boring steps build *massive* results."],
+    "compare": ["Same *24 hours*.", "Who are you *today*?", "Discipline vs *excuses*.",
+                "Two choices. *One* future.", "This is where lives *split*."],
+    "carry": ["You're carrying *too much*.", "Drop what's *heavy*.", "Let it *go*. Then run.",
+              "That weight isn't *yours*.", "Why are you still *holding* it?"],
+    "leap": ["Scared? *Jump* anyway.", "The gap is *smaller* than it looks.", "Comfort zone is a *trap*.",
+             "Fear lies. *Leap*.", "One jump changes *everything*."],
+}
+
+
 def _one(rnd):
     kind = rnd.choice(["door", "boulder", "crowd", "stairs", "compare", "carry", "leap"])
     if kind == "door":
@@ -118,5 +136,6 @@ def new_reel(used, rnd=None, last_template=None):
         if key not in used and reel["template"] != last_template:
             used.add(key)
             reel["key"] = key
+            reel["hook"] = rnd.choice(HOOKS[reel["template"]])
             return reel
     raise RuntimeError("idea bank exhausted, add more labels in ideas.py")

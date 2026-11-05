@@ -7,7 +7,7 @@ on:
     inputs:
       count:
         description: "How many reels to make"
-        default: "15"
+        default: "20"
 
 permissions:
   contents: write
@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
-      BATCH_SIZE: ${{ inputs.count || '15' }}
+      BATCH_SIZE: ${{ inputs.count || '20' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
