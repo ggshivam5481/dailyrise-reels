@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
 SLOTS = [(6, 0), (18, 0)]
+STORY_HOUR = 6
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "20"))
 MAX_QUEUE = int(os.environ.get("MAX_QUEUE", "60"))
 RELEASE = "queue"
@@ -117,6 +118,11 @@ def post():
     ig = IG(os.environ["IG_USER_ID"], os.environ["IG_TOKEN"])
     media_id = ig.publish_reel(final, e["caption"], thumb_offset=thumb)
     print(f"posted {e['file']} ({e['key']}) -> {media_id}")
+    if datetime.fromisoformat(e["slot"]).hour == STORY_HOUR:  # morning reel also goes to the story
+        try:
+            print("story ->", ig.publish_story(final))
+        except Exception as ex:  # a failed story must not undo the reel post
+            print("story failed:", ex)
     q.remove(e)
     s["posted"].append({"file": e["file"], "key": e["key"], "media": media_id, "at": now.isoformat()})
     save(QUEUE, q)

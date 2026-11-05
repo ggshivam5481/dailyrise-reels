@@ -29,10 +29,8 @@ class IG:
     def username(self):
         return self.get(self.uid, fields="username")["username"]
 
-    def publish_reel(self, video_path, caption, thumb_offset=None):
-        c = self.post(f"{self.uid}/media", media_type="REELS", upload_type="resumable",
-                      caption=caption, share_to_feed="true",
-                      **({"thumb_offset": str(thumb_offset)} if thumb_offset is not None else {}))
+    def _publish_video(self, video_path, **params):
+        c = self.post(f"{self.uid}/media", upload_type="resumable", **params)
         cid = c["id"]
         size = os.path.getsize(video_path)
         with open(video_path, "rb") as f:
@@ -51,6 +49,13 @@ class IG:
         else:
             raise RuntimeError("Upload processing timed out")
         return self.post(f"{self.uid}/media_publish", creation_id=cid)["id"]
+
+    def publish_reel(self, video_path, caption, thumb_offset=None):
+        extra = {"thumb_offset": str(thumb_offset)} if thumb_offset is not None else {}
+        return self._publish_video(video_path, media_type="REELS", caption=caption, share_to_feed="true", **extra)
+
+    def publish_story(self, video_path):
+        return self._publish_video(video_path, media_type="STORIES")
 
     def reply_to_comments(self, replied, replies, max_replies=15):
         me = self.username()
