@@ -1,35 +1,33 @@
-"""Stickman reel renderer: script JSON -> 1080x1920 MP4 with Hindi voiceover."""
-import asyncio
+"""Dark cinematic silhouette-stickman reels: reel JSON -> 1080x1920 MP4 with ambient music.
+
+Each reel picks one visual-metaphor template (door, boulder, crowd, stairs, compare, carry, leap)
+and fills in its labels. No voiceover, short uppercase caption on top, loop-friendly.
+"""
 import glob
 import math
 import os
 import random
 import subprocess
-import tempfile
-import wave
 
-from PIL import Image, ImageDraw, ImageFont
-import edge_tts
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 W, H, FPS = 1080, 1920, 24
-BG = (250, 247, 240)
-INK = (24, 24, 30)
-ACCENT = (255, 92, 56)
-BLUE = (48, 118, 255)
-GOLD = (255, 196, 40)
-LIGHT = (196, 196, 204)
-GRID = (237, 233, 223)
-
-VOICE = os.environ.get("TTS_VOICE", "hi-IN-MadhurNeural")
-RATE = os.environ.get("TTS_RATE", "+8%")
+GROUND = 1420
+SIL = (7, 8, 11)
+RIM = (64, 72, 88)
+WHITE = (232, 236, 242)
+MUTED = (140, 148, 162)
+RED = (214, 46, 38)
+WARM = (255, 202, 112)
+WARM2 = (255, 238, 196)
+PHONE = (150, 192, 255)
+STONE = (48, 52, 60)
 HANDLE = os.environ.get("IG_HANDLE", "@dailyrise.reels")
 
-GROUND = 1440
-S = 1.25  # stickman scale
-TORSO, HEAD, UA, FA, TH, SH, LW = 190, 58, 115, 105, 125, 120, 16
-CX = W // 2
+TORSO, HEAD, UA, FA, TH, SH, LW = 190, 60, 112, 102, 122, 118, 30
 
 
+# ---------------- basics ----------------
 def find_font(names):
     for n in names:
         if os.path.isabs(n) and os.path.exists(n):
@@ -40,22 +38,27 @@ def find_font(names):
     return None
 
 
-FONT_PATH = find_font([
-    "ComicNeue-Bold.ttf", "ComicNeue-Bold.otf", "C:/Windows/Fonts/comicbd.ttf",
-    "DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf",
-])
+MONO = find_font(["DejaVuSansMono-Bold.ttf", "C:/Windows/Fonts/consolab.ttf", "C:/Windows/Fonts/courbd.ttf"])
 _fonts = {}
 
 
 def font(size):
     if size not in _fonts:
-        _fonts[size] = ImageFont.truetype(FONT_PATH, size) if FONT_PATH else ImageFont.load_default(size)
+        _fonts[size] = ImageFont.truetype(MONO, size) if MONO else ImageFont.load_default(size)
     return _fonts[size]
 
 
-# ---------- geometry ----------
+def clamp(x, a=0.0, b=1.0):
+    return max(a, min(b, x))
+
+
+def ease(x):
+    x = clamp(x)
+    return x * x * (3 - 2 * x)
+
+
 def pt(p, ang, length):
-    """Angle in degrees: 0 = down, 90 = right, 180 = up."""
+    """0 deg = down, 90 = right, 180 = up."""
     a = math.radians(ang)
     return (p[0] + length * math.sin(a), p[1] + length * math.cos(a))
 
@@ -66,378 +69,549 @@ def seg(d, pts, w, c):
         d.ellipse([p[0] - w / 2, p[1] - w / 2, p[0] + w / 2, p[1] + w / 2], fill=c)
 
 
-STAND = dict(lean=0, head=0, la1=-18, la2=-8, ra1=18, ra2=8, ll1=-10, ll2=0, rl1=10, rl2=0)
+def text_w(d, s, f, sp):
+    return sum(d.textlength(c, font=f) for c in s) + sp * max(0, len(s) - 1)
 
 
-def draw_stick(d, hip, P, s=S, mood="neutral", blink=False, eyes_closed=False, look=0, color=INK):
-    lw = int(LW * s)
-    lean = P.get("lean", 0)
-    neck = pt(hip, 180 - lean, TORSO * s)
-    shoulder = pt(hip, 180 - lean, (TORSO - 25) * s)
-    head_c = pt(neck, 180 - lean - P.get("head", 0), (HEAD + 6) * s)
-    for k in ("l", "r"):
-        a1, a2 = P[k + "l1"], P.get(k + "l2", 0)
-        knee = pt(hip, a1, TH * s)
-        seg(d, [hip, knee, pt(knee, a1 + a2, SH * s)], lw, color)
-    seg(d, [hip, neck], lw, color)
-    hands = {}
-    for k in ("l", "r"):
-        a1, a2 = P[k + "a1"], P.get(k + "a2", 0)
-        el = pt(shoulder, a1, UA * s)
-        hand = pt(el, a1 + a2, FA * s)
-        seg(d, [shoulder, el, hand], lw, color)
-        hands[k] = hand
-    r = HEAD * s
-    hx, hy = head_c
-    d.ellipse([hx - r, hy - r, hx + r, hy + r], fill=BG, outline=color, width=lw)
-    ex = 19 * s
-    ox = look * 10 * s
-    for sx in (-1, 1):
-        x, y = hx + sx * ex + ox, hy - 8 * s
-        if blink or eyes_closed:
-            d.line([x - 8 * s, y, x + 8 * s, y], fill=color, width=int(5 * s))
+def spaced(d, cx, y, s, f, fill, sp=5):
+    x = cx - text_w(d, s, f, sp) / 2
+    for c in s:
+        d.text((x, y), c, font=f, fill=fill)
+        x += d.textlength(c, font=f) + sp
+
+
+def caption(d, text, y=250, size=44, color=WHITE):
+    f = font(size)
+    words, lines, cur = text.upper().split(), [], ""
+    for w in words:
+        t = (cur + " " + w).strip()
+        if cur and text_w(d, t, f, 5) > 940:
+            lines.append(cur)
+            cur = w
         else:
-            d.ellipse([x - 6.5 * s, y - 6.5 * s, x + 6.5 * s, y + 6.5 * s], fill=color)
-    mx, my = hx + ox, hy + 20 * s
-    if mood == "happy":
-        d.arc([mx - 22 * s, my - 16 * s, mx + 22 * s, my + 12 * s], 20, 160, fill=color, width=int(5 * s))
-    elif mood == "sad":
-        d.arc([mx - 18 * s, my, mx + 18 * s, my + 22 * s], 200, 340, fill=color, width=int(5 * s))
-    elif mood == "wow":
-        d.ellipse([mx - 9 * s, my - 6 * s, mx + 9 * s, my + 12 * s], outline=color, width=int(5 * s))
-    else:
-        d.line([mx - 14 * s, my + 2 * s, mx + 14 * s, my + 2 * s], fill=color, width=int(5 * s))
-    return hands, head_c
+            cur = t
+    if cur:
+        lines.append(cur)
+    for i, ln in enumerate(lines):
+        spaced(d, W / 2, y + i * (size + 20), ln, f, color)
 
 
-# ---------- poses ----------
-def hip_stand(s=S):
+def sign(d, cx, cy, text, size=36, color=WHITE, box=(14, 16, 21), outline=WHITE):
+    f = font(size)
+    tw = text_w(d, text, f, 3)
+    pw, ph = 20, 12
+    d.rectangle([cx - tw / 2 - pw, cy - size / 2 - ph, cx + tw / 2 + pw, cy + size / 2 + ph + 4],
+                fill=box, outline=outline, width=4)
+    spaced(d, cx, cy - size / 2 - 2, text, f, color, 3)
+
+
+# ---------------- backgrounds ----------------
+def sky(seed=1, mountains=True):
+    g = Image.linear_gradient("L").resize((W, H))
+    top, bot = (70, 82, 104), (10, 12, 17)
+    img = Image.merge("RGB", [g.point(lambda v, i=i: int(top[i] + (bot[i] - top[i]) * v / 255)) for i in range(3)])
+    glow = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(glow).ellipse([630, 280, 930, 580], fill=130)
+    glow = glow.filter(ImageFilter.GaussianBlur(95))
+    img = Image.composite(Image.new("RGB", (W, H), (205, 214, 232)), img, glow)
+    d = ImageDraw.Draw(img)
+    d.ellipse([736, 386, 824, 474], fill=(226, 230, 238))
+    rnd = random.Random(seed)
+    if mountains:
+        for base, amp, col in [(1190, 190, (42, 50, 66)), (1300, 130, (27, 32, 43))]:
+            pts, x = [(0, H)], -40
+            while x <= W + 120:
+                pts.append((x, base - rnd.uniform(0.25, 1.0) * amp))
+                x += rnd.randint(80, 170)
+            pts.append((W, H))
+            d.polygon(pts, fill=col)
+        fog = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(fog).rectangle([0, 1270, W, 1380], fill=70)
+        fog = fog.filter(ImageFilter.GaussianBlur(45))
+        img = Image.composite(Image.new("RGB", (W, H), (120, 132, 150)), img, fog)
+    return img
+
+
+def vignette(img):
+    m = Image.new("L", (W, H), 255)
+    ImageDraw.Draw(m).ellipse([-200, 150, W + 200, H - 150], fill=0)
+    m = m.filter(ImageFilter.GaussianBlur(220)).point(lambda v: int(v * 0.65))
+    return Image.composite(Image.new("RGB", (W, H), (0, 0, 0)), img, m)
+
+
+def flat_ground(img, y=GROUND):
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, y, W, H], fill=(11, 12, 16))
+    d.line([0, y, W, y], fill=(78, 88, 106), width=3)
+
+
+def watermark(img):
+    d = ImageDraw.Draw(img)
+    spaced(d, W / 2, H - 120, HANDLE, font(32), (96, 104, 118), 3)
+
+
+_bg_cache = {}
+
+
+def bg(key, builder):
+    if key not in _bg_cache:
+        im = builder()
+        im = vignette(im)
+        watermark(im)
+        _bg_cache[key] = im
+    return _bg_cache[key]
+
+
+# ---------------- figure ----------------
+BASE = dict(lean=0, head=0, la1=-14, la2=-6, ra1=14, ra2=6, ll1=-8, ll2=0, rl1=8, rl2=0)
+
+
+def mirror(P):
+    return {k: -v for k, v in P.items()}
+
+
+def walk(t, f=7.0, amp=26, lean=4, bend=15):
+    w = math.sin(t * f)
+    P = dict(BASE, ll1=amp * w, ll2=-amp * 0.9 * max(0, -w), rl1=-amp * w, rl2=-amp * 0.9 * max(0, w),
+             la1=-amp * 0.8 * w, la2=bend, ra1=amp * 0.8 * w, ra2=bend, lean=lean)
+    return P, abs(w)
+
+
+def stand_y(s=1.0):
     return GROUND - (TH + SH) * s
 
 
-def pose(name, t, dur):
-    P = dict(STAND)
-    sn = math.sin
-    x, y = CX, hip_stand()
-    o = dict(mood="neutral", look=0, closed=False, props=[])
-    if name == "walk" or name == "run":
-        fast = name == "run"
-        f, amp = (12, 42) if fast else (7, 26)
-        w = sn(t * f)
-        P.update(ll1=amp * w, ll2=-(amp * 0.9) * max(0, -w), rl1=-amp * w, rl2=-(amp * 0.9) * max(0, w),
-                 la1=-amp * 0.8 * w, la2=50 if fast else 15, ra1=amp * 0.8 * w, ra2=50 if fast else 15,
-                 lean=12 if fast else 4)
-        y -= abs(sn(t * f)) * (14 if fast else 6)
-        o.update(mood="happy", look=1, props=[("ground", (t * (700 if fast else 320)))])
-        if fast:
-            o["props"].append(("speed", t))
-    elif name == "think":
-        P.update(ra1=30, ra2=170, la1=28, la2=75, head=-8)
-        y += sn(t * 2) * 3
-        o.update(look=-1, props=[("bubble", t)])
-    elif name == "point":
-        P.update(ra1=95 + 6 * sn(t * 5), ra2=-4, la1=-14)
-        x -= 120
-        o.update(mood="happy", look=1, props=[("arrow", t)])
-    elif name == "sad":
-        P.update(lean=10, head=-14, la1=-4, la2=0, ra1=4, ra2=0)
-        y += 6 + sn(t * 1.5) * 3
-        o.update(mood="sad", props=[("cloud", t)])
-    elif name == "celebrate":
-        wv = 16 * sn(t * 10)
-        P.update(la1=-150 + wv, la2=-10, ra1=150 - wv, ra2=10, ll1=-22, rl1=22)
-        y -= abs(sn(t * 6)) * 55
-        o.update(mood="happy", props=[("confetti", t)])
-    elif name == "lift":
-        ph = (1 + sn(t * 4)) / 2
-        P.update(la1=-(115 + 50 * ph), la2=-(70 * (1 - ph)), ra1=115 + 50 * ph, ra2=70 * (1 - ph), ll1=-18, rl1=18)
-        o.update(mood="happy" if ph > 0.5 else "neutral", props=[("barbell", None)])
-    elif name == "phone":
-        P.update(ra1=28, ra2=118, la1=-12, head=-10)
-        o.update(mood="neutral", look=1, props=[("phone", t)])
-    elif name == "read":
-        P.update(la1=38, la2=62, ra1=48, ra2=58, head=-10)
-        o.update(mood="happy", look=1, props=[("book", t)])
-    elif name == "meditate":
-        P.update(ll1=-82, ll2=150, rl1=82, rl2=-150, la1=-42, la2=-25, ra1=42, ra2=25)
-        y = GROUND - 30 * S + sn(t * 2) * 5
-        o.update(mood="happy", closed=True, props=[("glow", t)])
-    elif name == "climb":
-        steps = min(dur * 1.4, 5.0)
-        k = min(t * 1.4, steps)
-        w = sn(t * 8)
-        P.update(ll1=35 * max(0, w) - 5, ll2=-40 * max(0, w), rl1=35 * max(0, -w) - 5, rl2=-40 * max(0, -w),
-                 la1=-25 * w, la2=20, ra1=25 * w, ra2=20, lean=6)
-        x = 260 + k * 95
-        y = hip_stand() - k * 72
-        o.update(mood="happy", look=1, props=[("stairs", None), ("flag", t)])
-    elif name == "sleep":
-        o.update(mood="neutral", closed=True, props=[("zzz", t)], lying=True)
-    else:  # idle
-        P.update(la1=-18 + 4 * sn(t * 2), ra1=18 - 4 * sn(t * 2))
-        y += sn(t * 3) * 4
-        o.update(mood="happy")
-    return P, (x, y), o
+def figure(d, hip, P, s=1.0, look=0, eyes="open", col=SIL, rim=RIM):
+    lean = P.get("lean", 0)
+    neck = pt(hip, 180 - lean, TORSO * s)
+    sh = pt(hip, 180 - lean, (TORSO - 28) * s)
+    head = pt(neck, 180 - lean - P.get("head", 0), (HEAD + 4) * s)
+    bones, hands, feet = [], {}, {}
+    for k in "lr":
+        a1, a2 = P[k + "l1"], P.get(k + "l2", 0)
+        kn = pt(hip, a1, TH * s)
+        ft = pt(kn, a1 + a2, SH * s)
+        bones.append(([hip, kn, ft], 1.0))
+        feet[k] = ft
+    bones.append(([hip, neck], 1.2))
+    for k in "lr":
+        a1, a2 = P[k + "a1"], P.get(k + "a2", 0)
+        el = pt(sh, a1, UA * s)
+        hd = pt(el, a1 + a2, FA * s)
+        bones.append(([sh, el, hd], 0.85))
+        hands[k] = hd
+    r = HEAD * s
+    passes = [(rim, 7 * s), (col, 0)] if rim else [(col, 0)]
+    for color, extra in passes:
+        for pts, wm in bones:
+            seg(d, pts, int(LW * s * wm + extra), color)
+        rr = r + extra / 2
+        d.ellipse([head[0] - rr, head[1] - rr, head[0] + rr, head[1] + rr], fill=color)
+    ex, ox = 20 * s, look * 13 * s
+    for sx in (-1, 1):
+        x, y = head[0] + sx * ex + ox, head[1] - 4 * s
+        if eyes == "closed":
+            d.line([x - 8 * s, y + 2 * s, x + 8 * s, y + 2 * s], fill=WHITE, width=max(2, int(4 * s)))
+            continue
+        ew, eh = {"open": (5, 8), "wide": (7, 10), "squint": (6, 3.5), "down": (5, 5)}.get(eyes, (5, 8))
+        if eyes == "down":
+            y += 9 * s
+        d.ellipse([x - ew * s, y - eh * s, x + ew * s, y + eh * s], fill=WHITE)
+    return {"hands": hands, "head": head, "feet": feet, "neck": neck}
 
 
-# ---------- props ----------
-def draw_prop(d, kind, arg, hands, head, hip):
-    if kind == "ground":
-        off = arg % 120
-        for gx in range(-120, W + 120, 120):
-            d.line([gx - off, GROUND + 26, gx - off + 55, GROUND + 26], fill=LIGHT, width=8)
-    elif kind == "speed":
-        for i in range(4):
-            yy = hip[1] - 220 + i * 70
-            xx = hip[0] - 230 - (arg * 900 + i * 60) % 120
-            d.line([xx, yy, xx - 110, yy], fill=LIGHT, width=9)
-    elif kind == "bubble":
-        bx, by = head[0] + 150, head[1] - 210
-        for i, (dx, dy, r) in enumerate([(-95, 150, 12), (-60, 100, 20)]):
-            d.ellipse([bx + dx - r, by + dy - r, bx + dx + r, by + dy + r], outline=INK, width=6, fill=(255, 255, 255))
-        d.ellipse([bx - 95, by - 80, bx + 105, by + 60], outline=INK, width=7, fill=(255, 255, 255))
-        q = "?" if int(arg * 2) % 2 == 0 else "?!"
-        f = font(96)
-        tw = d.textlength(q, font=f)
-        d.text((bx + 5 - tw / 2, by - 70), q, font=f, fill=BLUE)
-    elif kind == "arrow":
-        hx, hy = hands["r"]
-        sh = 20 * math.sin(arg * 6)
-        x0 = hx + 40 + sh
-        d.line([x0, hy, x0 + 150, hy], fill=ACCENT, width=14)
-        d.polygon([(x0 + 190, hy), (x0 + 140, hy - 34), (x0 + 140, hy + 34)], fill=ACCENT)
-    elif kind == "cloud":
-        cx, cy = head[0], head[1] - 230
-        for dx, dy, r in [(-70, 10, 55), (0, -20, 70), (70, 10, 55)]:
-            d.ellipse([cx + dx - r, cy + dy - r, cx + dx + r, cy + dy + r], fill=(150, 156, 170))
-        for i in range(5):
-            ph = (arg * 1.6 + i * 0.37) % 1
-            rx = cx - 90 + i * 45
-            ry = cy + 60 + ph * 140
-            d.line([rx, ry, rx - 6, ry + 26], fill=BLUE, width=7)
-    elif kind == "confetti":
-        rnd = random.Random(7)
-        for i in range(40):
-            px = rnd.uniform(60, W - 60)
-            sp = rnd.uniform(220, 420)
-            py = (rnd.uniform(0, 900) + arg * sp) % 1000 + 380
-            c = rnd.choice([ACCENT, BLUE, GOLD, (60, 190, 120)])
-            a = arg * rnd.uniform(3, 8)
-            dx, dy = 14 * math.cos(a), 14 * math.sin(a)
-            d.line([px - dx, py - dy, px + dx, py + dy], fill=c, width=10)
-    elif kind == "barbell":
-        (lx, ly), (rx, ry) = hands["l"], hands["r"]
-        my = (ly + ry) / 2
-        d.line([lx - 90, my, rx + 90, my], fill=INK, width=12)
-        for px in (lx - 70, rx + 70):
-            d.rounded_rectangle([px - 18, my - 60, px + 18, my + 60], 8, fill=ACCENT)
-    elif kind == "phone":
-        hx, hy = hands["r"]
-        d.rounded_rectangle([hx - 34, hy - 62, hx + 34, hy + 62], 12, fill=INK)
-        glow = 150 + int(80 * (0.5 + 0.5 * math.sin(arg * 8)))
-        d.rounded_rectangle([hx - 26, hy - 50, hx + 26, hy + 48], 6, fill=(120, 170, glow))
-    elif kind == "book":
-        (lx, ly), (rx, ry) = hands["l"], hands["r"]
-        mx, my = (lx + rx) / 2 + 20, min(ly, ry) - 10
-        d.polygon([(mx, my + 10), (mx - 110, my - 20), (mx - 110, my + 90), (mx, my + 120)], fill=(255, 255, 255), outline=INK, width=6)
-        d.polygon([(mx, my + 10), (mx + 110, my - 20), (mx + 110, my + 90), (mx, my + 120)], fill=(255, 255, 255), outline=INK, width=6)
-        for i in range(3):
-            yy = my + 15 + i * 25
-            d.line([mx - 90, yy, mx - 20, yy + 10], fill=LIGHT, width=5)
-            d.line([mx + 20, yy + 10, mx + 90, yy], fill=LIGHT, width=5)
-    elif kind == "glow":
-        r = 330 + 20 * math.sin(arg * 2)
-        cx, cy = hip[0], hip[1] - 230
-        for i, c in enumerate([(255, 236, 190), (255, 228, 160)]):
-            rr = r - i * 70
-            d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], outline=c, width=14)
-    elif kind == "stairs":
-        for i in range(7):
-            x0 = 200 + i * 95 + 60
-            y0 = GROUND - i * 72
-            d.rectangle([x0, y0, x0 + 95, y0 + 72 * (i + 1)], fill=(232, 226, 212), outline=INK, width=6)
-    elif kind == "flag":
-        fx, fy = 200 + 7 * 95 + 40, GROUND - 7 * 72
-        d.line([fx, fy, fx, fy - 170], fill=INK, width=9)
-        wv = 10 * math.sin(arg * 6)
-        d.polygon([(fx, fy - 170), (fx + 100, fy - 140 + wv), (fx, fy - 110)], fill=ACCENT)
-    elif kind == "zzz":
-        for i in range(3):
-            ph = (arg * 0.7 + i / 3) % 1
-            f = font(int(50 + 30 * i))
-            d.text((head[0] + 70 + ph * 120 + i * 30, head[1] - 80 - ph * 260), "Z", font=f, fill=BLUE)
-    elif kind == "clock":
-        cx, cy, r = 880, 640, 85
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 255, 255), outline=INK, width=9)
-        a = arg * 140
-        d.line([(cx, cy), pt((cx, cy), 180 - a, r * 0.75)], fill=ACCENT, width=9)
-        d.line([(cx, cy), pt((cx, cy), 180 - a / 12, r * 0.5)], fill=INK, width=11)
+def dust(d, t, n=34, seed=3):
+    rnd = random.Random(seed)
+    for _ in range(n):
+        x0, y0, sp, r = rnd.uniform(0, W), rnd.uniform(400, 1700), rnd.uniform(8, 26), rnd.uniform(1.5, 3.5)
+        x = (x0 + math.sin(t * 0.6 + y0) * 18) % W
+        y = (y0 - t * sp) % 1400 + 350
+        c = 95 + int(40 * (0.5 + 0.5 * math.sin(t * 2 + x0)))
+        d.ellipse([x - r, y - r, x + r, y + r], fill=(c, c + 6, c + 18))
 
 
-def draw_sleeper(img, t):
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle([170, GROUND - 120, 910, GROUND - 40], 20, fill=(140, 170, 230), outline=INK, width=7)
-    d.rectangle([170, GROUND - 40, 190, GROUND + 20], fill=INK)
-    d.rectangle([890, GROUND - 40, 910, GROUND + 20], fill=INK)
-    d.rounded_rectangle([200, GROUND - 175, 330, GROUND - 120], 20, fill=(255, 255, 255), outline=INK, width=6)
-    layer = Image.new("RGBA", (900, 900), (0, 0, 0, 0))
-    ld = ImageDraw.Draw(layer)
-    breath = math.sin(t * 2) * 4
-    P = dict(STAND, la1=-6, ra1=6, ll1=-3, rl1=3)
-    _, head = draw_stick(ld, (450, 520 + breath), P, s=1.05, eyes_closed=True, mood="happy")
-    rot = layer.rotate(-90, resample=Image.BICUBIC, center=(450, 520))
-    img.paste(rot, (165, GROUND - 650), rot)
-    draw_prop(d, "zzz", t, {}, (300, GROUND - 230), None)
+def scroll_ground(d, t, speed, y=GROUND, col=(52, 60, 74)):
+    off = (t * speed) % 140
+    for gx in range(-140, W + 140, 140):
+        d.line([gx - off, y + 30, gx - off + 60, y + 30], fill=col, width=5)
 
 
-# ---------- text ----------
-def wrap_words(words, f, d, maxw):
-    lines, cur = [], []
-    for w in words:
-        test = " ".join(cur + [w])
-        if cur and d.textlength(test, font=f) > maxw:
-            lines.append(cur)
-            cur = [w]
-        else:
-            cur.append(w)
-    if cur:
-        lines.append(cur)
-    return lines
+def blink_eyes(t, base="open"):
+    return "closed" if (t % 3.4) < 0.11 else base
 
 
-def draw_title(d, title):
-    f = font(78)
-    lines = wrap_words(title.split(), f, d, 900)
-    lh = 92
-    top = 150
-    box_h = lh * len(lines) + 50
-    d.rounded_rectangle([60, top - 25, W - 60, top - 25 + box_h], 36, fill=INK)
-    for i, ln in enumerate(lines):
-        s = " ".join(ln)
-        tw = d.textlength(s, font=f)
-        d.text(((W - tw) / 2, top + i * lh), s, font=f, fill=(255, 255, 255))
-    d.rounded_rectangle([W / 2 - 70, top - 25 + box_h - 8, W / 2 + 70, top - 25 + box_h + 4], 6, fill=ACCENT)
+# ---------------- props for the compare template ----------------
+def pose_lib(name, t, s):
+    """Returns P, dy, look, eyes, extra-draw callback."""
+    if name == "walk":
+        P, b = walk(t)
+        return P, -b * 6 * s, 1, blink_eyes(t), None
+    if name == "run":
+        P, b = walk(t, 12, 42, 14, 55)
+
+        def lines(d, info, hip):
+            for i in range(3):
+                yy = hip[1] - 200 * s + i * 60 * s
+                xx = hip[0] - 170 * s - (t * 700 + i * 50) % 90
+                d.line([xx, yy, xx - 90 * s, yy], fill=MUTED, width=6)
+        return P, -b * 16 * s, 1, blink_eyes(t), lines
+    if name == "phone":
+        P = dict(BASE, ra1=28, ra2=118, la1=-10, head=-14)
+
+        def ph(d, info, hip):
+            hx, hy = info["hands"]["r"]
+            g = 170 + int(60 * (0.5 + 0.5 * math.sin(t * 9)))
+            d.rounded_rectangle([hx - 20 * s, hy - 36 * s, hx + 20 * s, hy + 36 * s], 8, fill=(g - 40, g, 255))
+        return P, 0, 1, "down", ph
+    if name == "read":
+        P = dict(BASE, la1=40, la2=62, ra1=50, ra2=56, head=-12)
+
+        def bk(d, info, hip):
+            (lx, ly), (rx, ry) = info["hands"]["l"], info["hands"]["r"]
+            mx, my = (lx + rx) / 2 + 15 * s, min(ly, ry) - 10 * s
+            for sx in (-1, 1):
+                d.polygon([(mx, my + 8 * s), (mx + sx * 85 * s, my - 14 * s), (mx + sx * 85 * s, my + 70 * s),
+                           (mx, my + 92 * s)], fill=WARM2, outline=SIL)
+        return P, 0, 1, "down", bk
+    if name == "lift":
+        ph_ = (1 + math.sin(t * 4)) / 2
+        P = dict(BASE, la1=-(115 + 50 * ph_), la2=-(70 * (1 - ph_)), ra1=115 + 50 * ph_, ra2=70 * (1 - ph_),
+                 ll1=-16, rl1=16)
+
+        def bar(d, info, hip):
+            (lx, ly), (rx, ry) = info["hands"]["l"], info["hands"]["r"]
+            my = (ly + ry) / 2
+            d.line([lx - 70 * s, my, rx + 70 * s, my], fill=(90, 96, 108), width=int(10 * s))
+            for px in (lx - 55 * s, rx + 55 * s):
+                d.rectangle([px - 14 * s, my - 48 * s, px + 14 * s, my + 48 * s], fill=SIL, outline=RIM, width=3)
+        return P, 0, 0, "squint" if ph_ < 0.5 else "open", bar
+    if name == "sleep":
+        P = dict(BASE, head=24, lean=6, la1=-4, ra1=4)
+
+        def z(d, info, hip):
+            hx, hy = info["head"]
+            for i in range(3):
+                ph2 = (t * 0.6 + i / 3) % 1
+                d.text((hx + 50 * s + ph2 * 90 * s, hy - 60 * s - ph2 * 200 * s), "z", font=font(int((34 + 14 * i) * s)),
+                       fill=MUTED)
+        return P, 0, 0, "closed", z
+    if name == "sad":
+        P = dict(BASE, lean=10, head=-18, la1=-3, la2=0, ra1=3, ra2=0)
+        return P, 4 * s, 0, "down", None
+    if name == "celebrate":
+        wv = 16 * math.sin(t * 10)
+        P = dict(BASE, la1=-150 + wv, la2=-10, ra1=150 - wv, ra2=10, ll1=-20, rl1=20)
+        return P, -abs(math.sin(t * 6)) * 45 * s, 0, "wide", None
+    P = dict(BASE, la1=-14 + 4 * math.sin(t * 2), ra1=14 - 4 * math.sin(t * 2))
+    return P, math.sin(t * 3) * 3, 0, blink_eyes(t), None
 
 
-def draw_subtitle(d, text, progress):
-    f = font(70)
-    words = text.split()
-    lines = wrap_words(words, f, d, 940)
-    n = len(words)
-    spoken = progress * n
-    lh = 88
-    top = 1530
-    idx = 0
-    space = d.textlength(" ", font=f)
-    for li, ln in enumerate(lines):
-        total = d.textlength(" ".join(ln), font=f)
-        x = (W - total) / 2
-        y = top + li * lh
-        for w in ln:
-            if idx < int(spoken):
-                c = INK
-            elif idx == int(spoken):
-                c = ACCENT
-            else:
-                c = LIGHT
-            d.text((x, y), w, font=f, fill=c)
-            x += d.textlength(w, font=f) + space
-            idx += 1
+# ---------------- templates ----------------
+def t_door(img, d, t, dur, p):
+    u = t / dur
+    dx0, dx1, dtop = 770, 920, GROUND - 330
+    snap = p.get("snap", True)
+    sn_u = 0.6
+    stake = (120, GROUND - 120)
+    sign(d, 150, GROUND - 230, p["anchor"], 34)
+    d.rectangle([110, GROUND - 200, 130, GROUND], fill=SIL, outline=RIM, width=3)
+    flash = 0
+    if not snap or u < sn_u:
+        P, b = walk(t, 9, 32, 26, 20)
+        x = 470 + 18 * math.sin(t * 1.4)
+        hip = (x, stand_y() - b * 6)
+        info = figure(d, hip, P, look=1, eyes=blink_eyes(t, "squint"))
+        foot = info["feet"]["l"]
+        d.line([foot, stake], fill=RED, width=7)
+    else:
+        k = (u - sn_u) / (0.88 - sn_u)
+        d.line([stake, (250, GROUND - 6)], fill=RED, width=7)
+        if k < 1:
+            P, b = walk(t, 12, 42, 14, 55)
+            x = 470 + (dx0 + 40 - 470) * ease(k)
+            hip = (x, stand_y() - b * 14)
+            info = figure(d, hip, P, look=1, eyes="wide")
+            f = info["feet"]["l"]
+            d.line([f, (f[0] - 60, f[1] + 6)], fill=RED, width=7)
+        flash = clamp((u - 0.84) / 0.06) * (1 - clamp((u - 0.94) / 0.06))
+    # door drawn last so the figure walks into the light
+    d.rectangle([dx0 - 10, dtop - 10, dx1 + 10, GROUND], fill=SIL)
+    d.rectangle([dx0, dtop, dx1, GROUND], fill=WARM)
+    d.rectangle([dx0 + 14, dtop + 14, dx1 - 14, GROUND], fill=WARM2)
+    spaced(d, (dx0 + dx1) / 2, dtop - 80, p["goal"], font(50), WARM, 6)
+    if flash > 0:
+        ov = Image.new("RGB", (W, H), WARM2)
+        img.paste(Image.blend(img, ov, flash * 0.8))
+    caption(ImageDraw.Draw(img), p["caption"])
 
 
-def make_background():
-    bg = Image.new("RGB", (W, H), BG)
-    d = ImageDraw.Draw(bg)
-    for yy in range(80, H, 80):
-        d.line([0, yy, W, yy], fill=GRID, width=2)
-    d.line([0, GROUND + 6, W, GROUND + 6], fill=INK, width=8)
-    f = font(40)
-    tw = d.textlength(HANDLE, font=f)
-    d.text(((W - tw) / 2, H - 110), HANDLE, font=f, fill=(170, 170, 178))
-    return bg
+def door_bg():
+    im = sky(4, mountains=False)
+    flat_ground(im)
+    glow = Image.new("L", (W, H), 0)
+    gd = ImageDraw.Draw(glow)
+    gd.rectangle([700, GROUND - 400, 990, GROUND], fill=200)
+    gd.polygon([(770, GROUND), (920, GROUND), (1080, H), (300, H)], fill=140)
+    glow = glow.filter(ImageFilter.GaussianBlur(60))
+    return Image.composite(Image.new("RGB", (W, H), (150, 120, 72)), im, glow)
 
 
-# ---------- audio ----------
-async def _tts(text, path):
-    await edge_tts.Communicate(text, VOICE, rate=RATE).save(path)
+SLOPE = ((-60, 1700), (1140, 1000))
 
 
-def synth(scenes, tmp):
-    durs, wavs = [], []
-    for i, sc in enumerate(scenes):
-        mp3 = os.path.join(tmp, f"s{i}.mp3")
-        wav = os.path.join(tmp, f"s{i}.wav")
-        for attempt in range(3):
-            try:
-                asyncio.run(_tts(sc["say"], mp3))
-                break
-            except Exception:
-                if attempt == 2:
-                    raise
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", mp3, "-af", "apad=pad_dur=0.35",
-                        "-ar", "44100", "-ac", "1", wav], check=True)
-        with wave.open(wav) as wf:
-            durs.append(wf.getnframes() / wf.getframerate())
-        wavs.append(wav)
-    full = os.path.join(tmp, "full.wav")
-    with wave.open(wavs[0]) as w0:
-        params = w0.getparams()
-    with wave.open(full, "wb") as out:
-        out.setparams(params)
-        for wv in wavs:
-            with wave.open(wv) as wf:
-                out.writeframes(wf.readframes(wf.getnframes()))
-    return durs, full
+def slope_y(x):
+    (x0, y0), (x1, y1) = SLOPE
+    return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
 
 
-# ---------- main render ----------
-CTA = {"pose": "celebrate", "say": "रोज़ एक प्रतिशत बेहतर बनने के लिए, अभी फॉलो करो।",
-       "text": "Roz 1% better ke liye FOLLOW karo"}
+def boulder_bg():
+    im = sky(7)
+    d = ImageDraw.Draw(im)
+    (x0, y0), (x1, y1) = SLOPE
+    d.polygon([(x0, y0), (x1, y1), (x1, H), (x0, H)], fill=(11, 12, 16))
+    d.line([(x0, y0), (x1, y1)], fill=(80, 90, 108), width=3)
+    return im
 
 
-def render(reel, out_path):
-    scenes = list(reel["scenes"]) + [CTA]
-    with tempfile.TemporaryDirectory() as tmp:
-        durs, audio = synth(scenes, tmp)
-        total = sum(durs)
-        bg = make_background()
-        draw_title(ImageDraw.Draw(bg), reel["title"])
-        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
-               "-r", str(FPS), "-i", "-", "-i", audio, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-               "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest",
-               "-movflags", "+faststart", out_path]
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-        elapsed = 0.0
-        for sc, dur in zip(scenes, durs):
-            nfr = max(1, round(dur * FPS))
-            for fi in range(nfr):
-                t = fi / FPS
-                gt = elapsed + t
-                img = bg.copy()
-                d = ImageDraw.Draw(img)
-                d.rectangle([0, 0, W * gt / total, 14], fill=ACCENT)
-                name = sc.get("pose", "idle")
-                if name == "sleep":
-                    draw_sleeper(img, t)
-                    d = ImageDraw.Draw(img)
-                else:
-                    P, hip, o = pose(name, t, dur)
-                    pre = [p for p in o["props"] if p[0] in ("glow", "stairs", "ground", "speed")]
-                    post = [p for p in o["props"] if p not in pre]
-                    for kind, arg in pre:
-                        draw_prop(d, kind, arg, {}, None, hip)
-                    pop = min(1.0, 0.85 + t * 1.2)
-                    blink = (gt % 3.2) < 0.12
-                    hands, head = draw_stick(d, hip, P, s=S * pop, mood=o["mood"], blink=blink,
-                                             eyes_closed=o["closed"], look=o["look"])
-                    for kind, arg in post:
-                        draw_prop(d, kind, arg, hands, head, hip)
-                if sc.get("prop") == "clock":
-                    draw_prop(d, "clock", t, {}, None, None)
-                draw_subtitle(d, sc["text"], min(1.0, t / max(0.1, dur - 0.35)))
-                proc.stdin.write(img.tobytes())
-            elapsed += dur
-        proc.stdin.close()
-        if proc.wait() != 0:
-            raise RuntimeError("ffmpeg failed")
-    return total
+def t_boulder(img, d, t, dur, p):
+    u = t / dur
+    labels = p["labels"]
+    for i, lab in enumerate(labels):
+        x = 470 + i * (560 / max(1, len(labels) - 1)) if len(labels) > 1 else 700
+        y = slope_y(x)
+        d.line([(x, y), (x, y - 190)], fill=(30, 34, 42), width=8)
+        sign(d, x, y - 210, lab, 32)
+    xb = 400 + 170 * u + 14 * math.sin(t * 2.4) - (40 * ease((u - 0.8) / 0.2) if p.get("slip") else 0)
+    rb = 125
+    cy = slope_y(xb) - rb * 1.08
+    d.ellipse([xb - rb - 5, cy - rb - 5, xb + rb + 5, cy + rb + 5], fill=RIM)
+    d.ellipse([xb - rb, cy - rb, xb + rb, cy + rb], fill=STONE)
+    ang = xb / rb
+    for k in range(3):
+        a = ang + k * 2.1
+        d.line([(xb + 30 * math.cos(a), cy + 30 * math.sin(a)), (xb + 95 * math.cos(a + 0.4), cy + 95 * math.sin(a + 0.4))],
+               fill=(36, 39, 46), width=6)
+    w = math.sin(t * 3.2)
+    P = dict(BASE, lean=40, head=-14, la1=104, la2=-8, ra1=98, ra2=-4,
+             ll1=-42 + 14 * w, ll2=8, rl1=12 - 14 * w, rl2=-22)
+    hx = xb - rb - 150
+    figure(d, (hx, slope_y(hx) - (TH + SH) * 0.86), P, look=1, eyes=blink_eyes(t, "squint"))
+    caption(d, p["caption"])
+
+
+def crowd_bg():
+    im = sky(11)
+    flat_ground(im)
+    return im
+
+
+def t_crowd(img, d, t, dur, p):
+    s = 0.72
+    for i in range(7):
+        x = (900 + i * 170 - t * 110) % (W + 340) - 170
+        P, b = walk(t + i * 0.4, 6, 20, 8, 10)
+        P = mirror(dict(P, ra1=28, ra2=118, head=-14))
+        hip = (x, stand_y(s) - 70 - b * 4)
+        info = figure(d, hip, P, s=s, look=-1, eyes="down", col=(26, 29, 36), rim=(44, 50, 62))
+        hx, hy = info["hands"]["l"]
+        d.rounded_rectangle([hx - 13, hy - 24, hx + 13, hy + 24], 6, fill=PHONE)
+    sign(d, 230, 720, p["crowd"], 32, color=MUTED, outline=MUTED)
+    scroll_ground(d, t, 60)
+    P, b = walk(t, 7, 28, 2, 14)
+    info = figure(d, (640, stand_y() - b * 6), P, look=1, eyes=blink_eyes(t))
+    hx, hy = info["head"]
+    sign(d, hx, hy - 150, p["you"], 36, color=WARM, outline=WARM)
+    d.polygon([(hx - 14, hy - 112), (hx + 14, hy - 112), (hx, hy - 90)], fill=WARM)
+    caption(d, p["caption"])
+
+
+STEP_W, STEP_H, STEP_X = 160, 112, 120
+
+
+def stairs_bg(n):
+    def build():
+        im = sky(5)
+        flat_ground(im)
+        d = ImageDraw.Draw(im)
+        top_x = STEP_X + n * STEP_W
+        glow = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(glow).ellipse([top_x - 260, GROUND - n * STEP_H - 420, top_x + 140, GROUND - n * STEP_H - 20], fill=150)
+        glow = glow.filter(ImageFilter.GaussianBlur(70))
+        im = Image.composite(Image.new("RGB", (W, H), (190, 160, 100)), im, glow)
+        d = ImageDraw.Draw(im)
+        for i in range(n):
+            x0 = STEP_X + i * STEP_W
+            y0 = GROUND - (i + 1) * STEP_H
+            d.rectangle([x0, y0, x0 + STEP_W, GROUND], fill=(20, 23, 30), outline=(70, 80, 98), width=3)
+        return im
+    return build
+
+
+def t_stairs(img, d, t, dur, p):
+    labs = p["labels"]
+    n = len(labs)
+    for i, lab in enumerate(labs):
+        x0 = STEP_X + i * STEP_W
+        y0 = GROUND - (i + 1) * STEP_H
+        f = font(30)
+        spaced(d, x0 + STEP_W / 2, y0 + 36, lab, f, WHITE if i < n - 1 else WARM, 2)
+    fx, fy = STEP_X + n * STEP_W - 40, GROUND - n * STEP_H
+    d.line([(fx, fy), (fx, fy - 190)], fill=SIL, width=9)
+    wv = 10 * math.sin(t * 6)
+    d.polygon([(fx, fy - 190), (fx + 110, fy - 160 + wv), (fx, fy - 128)], fill=WARM)
+    climb_t = dur * 0.82
+    k = clamp(t / climb_t) * (n - 0.5)
+    step = int(k)
+    frac = k - step
+    x = STEP_X + 60 + k * STEP_W
+    floor = GROUND - step * STEP_H - (STEP_H * ease((frac - 0.5) * 2) if frac > 0.5 else 0)
+    if t < climb_t:
+        P, b = walk(t, 8, 30, 8, 18)
+        figure(d, (x, floor - (TH + SH) - b * 10), P, look=1, eyes=blink_eyes(t))
+    else:
+        P, dy, look, eyes, _ = pose_lib("celebrate", t, 1.0)
+        figure(d, (x, GROUND - n * STEP_H - (TH + SH) + dy + 12), P, look=0, eyes=eyes)
+    caption(d, p["caption"])
+
+
+def compare_bg():
+    im = sky(9, mountains=False)
+    d = ImageDraw.Draw(im)
+    for top in (430, 1170):
+        d.rectangle([40, top, W - 40, top + 690], fill=(16, 18, 24), outline=(60, 68, 84), width=3)
+        d.rectangle([60, top + 600, W - 60, top + 690], fill=(10, 11, 15))
+        d.line([60, top + 600, W - 60, top + 600], fill=(74, 84, 100), width=3)
+    return im
+
+
+def t_compare(img, d, t, dur, p):
+    s = 0.78
+    for top, lab, pose_name, tm in ((430, p["a"], p["a_pose"], p.get("a_time")), (1170, p["b"], p["b_pose"], p.get("b_time"))):
+        spaced(d, W / 2, top + 30, lab, font(40), WHITE, 5)
+        d.line([W / 2 - 160, top + 90, W / 2 + 160, top + 90], fill=MUTED, width=3)
+        if tm:
+            spaced(d, W - 190, top + 120, tm, font(38), RED, 3)
+        P, dy, look, eyes, extra = pose_lib(pose_name, t, s)
+        hip = (W / 2, top + 600 - (TH + SH) * s + dy)
+        info = figure(d, hip, P, s=s, look=look, eyes=eyes)
+        if extra:
+            extra(d, info, hip)
+    caption(d, p["caption"], y=260)
+
+
+def t_carry(img, d, t, dur, p):
+    u = t / dur
+    drop_u = 0.55
+    if u < drop_u:
+        scroll_ground(d, t, 50)
+        P, b = walk(t, 3.2, 16, 34, 40)
+        P.update(la1=-150, la2=-35, ra1=-138, ra2=-40, head=-6)
+        hip = (560, stand_y() + 25 - b * 3)
+        nx, ny = pt(hip, 180 - P["lean"], TORSO)
+        cx, cy = nx - 175, ny - 95
+        d.ellipse([cx - 175, cy - 145, cx + 175, cy + 145], fill=RIM)
+        d.ellipse([cx - 168, cy - 138, cx + 168, cy + 138], fill=STONE)
+        info = figure(d, hip, P, look=1, eyes=blink_eyes(t, "squint"))
+        d.ellipse([cx - 175, cy - 145, cx + 175, cy + 145], fill=RIM)
+        d.ellipse([cx - 168, cy - 138, cx + 168, cy + 138], fill=STONE)
+        spaced(d, cx, cy - 20, p["load"], font(34 if len(p["load"]) < 12 else 28), WHITE, 3)
+    else:
+        k = (u - drop_u) / (1 - drop_u)
+        sx, sy = 330, GROUND - 120
+        fall = ease(k * 4)
+        cy = (stand_y() - 260) + (sy - (stand_y() - 260)) * fall
+        d.ellipse([sx - 175, cy - 125, sx + 175, cy + 125], fill=RIM)
+        d.ellipse([sx - 168, cy - 118, sx + 168, cy + 118], fill=STONE)
+        spaced(d, sx, cy - 20, p["load"], font(34 if len(p["load"]) < 12 else 28), WHITE, 3)
+        scroll_ground(d, t, 50 + 600 * ease(k * 2))
+        P, b = walk(t, 12, 42, 14, 55)
+        x = 560 + 700 * ease((k - 0.25) / 0.75)
+        figure(d, (x, stand_y() - b * 14), P, look=1, eyes="wide")
+    caption(d, p["caption"])
+
+
+GAP0, GAP1 = 420, 700
+
+
+def leap_bg():
+    im = sky(13)
+    d = ImageDraw.Draw(im)
+    d.polygon([(0, GROUND), (GAP0, GROUND), (GAP0 - 40, H), (0, H)], fill=(11, 12, 16))
+    d.polygon([(GAP1, GROUND - 40), (W, GROUND - 40), (W, H), (GAP1 + 30, H)], fill=(11, 12, 16))
+    d.line([0, GROUND, GAP0, GROUND], fill=(78, 88, 106), width=3)
+    d.line([GAP1, GROUND - 40, W, GROUND - 40], fill=(78, 88, 106), width=3)
+    return im
+
+
+def t_leap(img, d, t, dur, p):
+    u = t / dur
+    sign(d, 190, GROUND - 260, p["from"], 30)
+    d.line([(190, GROUND), (190, GROUND - 230)], fill=SIL, width=8)
+    sign(d, 900, GROUND - 300, p["to"], 30, color=WARM, outline=WARM)
+    d.line([(900, GROUND - 40), (900, GROUND - 270)], fill=SIL, width=8)
+    if u < 0.3:
+        P = dict(BASE, head=-16, la1=-10 + 3 * math.sin(t * 20), ra1=10)
+        figure(d, (300 + 2 * math.sin(t * 25), stand_y()), P, look=1, eyes="down")
+    elif u < 0.5:
+        k = (u - 0.3) / 0.2
+        P, b = walk(t, 12, 42, 14, 55)
+        figure(d, (150 + 250 * k, stand_y() - b * 14), P, look=1, eyes="wide")
+    elif u < 0.72:
+        k = (u - 0.5) / 0.22
+        x = 400 + 420 * k
+        y = stand_y() - 300 * math.sin(math.pi * k) - 40 * k
+        P = dict(BASE, la1=-150, ra1=150, ll1=-40, ll2=70, rl1=30, rl2=-60, lean=10)
+        figure(d, (x, y), P, look=1, eyes="wide")
+    else:
+        P, dy, look, eyes, _ = pose_lib("celebrate", t, 1.0)
+        figure(d, (820, stand_y() - 40 + dy), P, eyes=eyes)
+    caption(d, p["caption"])
+
+
+TEMPLATES = {
+    "door": (t_door, lambda p: ("door", door_bg)),
+    "boulder": (t_boulder, lambda p: ("boulder", boulder_bg)),
+    "crowd": (t_crowd, lambda p: ("crowd", crowd_bg)),
+    "stairs": (t_stairs, lambda p: (f"stairs{len(p['labels'])}", stairs_bg(len(p["labels"])))),
+    "compare": (t_compare, lambda p: ("compare", compare_bg)),
+    "carry": (t_carry, lambda p: ("crowd", crowd_bg)),
+    "leap": (t_leap, lambda p: ("leap", leap_bg)),
+}
+
+# ---------------- audio ----------------
+CHORDS = [(110, 220, 261.63, 329.63), (98, 196, 246.94, 293.66), (87.31, 174.61, 220, 261.63),
+          (116.54, 233.08, 277.18, 349.23), (103.83, 207.65, 246.94, 311.13)]
+
+
+def music_filter(dur, seed):
+    a, b, c, e = CHORDS[seed % len(CHORDS)]
+    expr = (f"0.10*sin(2*PI*{a}*t)*(0.7+0.3*sin(2*PI*0.2*t))"
+            f"+0.05*sin(2*PI*{b}*t)"
+            f"+0.045*sin(2*PI*{c}*t)*(0.5+0.5*sin(2*PI*0.33*t))"
+            f"+0.04*sin(2*PI*{e}*t)*(0.5+0.5*sin(2*PI*0.5*t+1))")
+    return (f"aevalsrc='{expr}':s=44100:d={dur:.2f},aecho=0.8:0.8:300|620:0.35|0.25,lowpass=f=2400,"
+            f"afade=t=in:d=1.2,afade=t=out:st={max(0.0, dur - 1.5):.2f}:d=1.5")
+
+
+# ---------------- render ----------------
+def render(reel, out_path, seed=0):
+    fn, bgf = TEMPLATES[reel["template"]]
+    key, builder = bgf(reel)
+    base = bg(key, builder)
+    dur = float(reel.get("dur", 10))
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
+           "-r", str(FPS), "-i", "-", "-f", "lavfi", "-i", music_filter(dur, seed),
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-shortest", "-movflags", "+faststart", out_path]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    for fi in range(int(dur * FPS)):
+        t = fi / FPS
+        img = base.copy()
+        d = ImageDraw.Draw(img)
+        dust(d, t)
+        fn(img, d, t, dur, reel)
+        proc.stdin.write(img.tobytes())
+    proc.stdin.close()
+    if proc.wait() != 0:
+        raise RuntimeError("ffmpeg failed")
+    return dur

@@ -1,0 +1,45 @@
+name: make-reels
+
+on:
+  schedule:
+    - cron: "30 19 * * *"   # 01:00 IST: render the day's batch
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "How many reels to make"
+        default: "15"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: state
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BATCH_SIZE: ${{ inputs.count || '15' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: System packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - run: pip install -q -r requirements.txt
+      - name: Make sure the queue release exists
+        run: gh release view queue >/dev/null 2>&1 || gh release create queue --title "Reel queue" --notes "Rendered reels waiting to be posted."
+      - name: Render and queue reels
+        run: python main.py batch
+      - name: Save queue
+        if: always()
+        run: |
+          git config user.name "reel-bot"
+          git config user.email "reel-bot@users.noreply.github.com"
+          git add state.json queue.json
+          git diff --cached --quiet || (git commit -m "queued reels" && git pull --rebase -q && git push)

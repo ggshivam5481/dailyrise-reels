@@ -1,17 +1,24 @@
-"""Daily job: render the next stickman reel and post it, or reply to comments.
+"""Reel autopilot.
 
-Usage:
-  python main.py            render + post next reel
-  python main.py --comments reply to new comments
-  DRY_RUN=1 python main.py  render only, no posting
+  python main.py batch     render up to BATCH_SIZE new reels, upload to the "queue" release,
+                           and give each the next free slot (06:00 / 18:00 IST)
+  python main.py post      post the queued reel whose slot has arrived
+  python main.py comments  reply to new comments
+  python main.py preview N render N reels into out/ without uploading (local check)
 """
 import json
 import os
+import random
+import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 
-STATE = "state.json"
-HASHTAGS = ("#motivation #hindimotivation #selfimprovement #discipline #1percentbetter "
-            "#dailyrise #successmindset #motivationalreels #stickman #reelsindia")
+IST = timezone(timedelta(hours=5, minutes=30))
+SLOTS = [(6, 0), (18, 0)]
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "15"))
+MAX_QUEUE = int(os.environ.get("MAX_QUEUE", "60"))
+RELEASE = "queue"
+STATE, QUEUE = "state.json", "queue.json"
 REPLIES = [
     "Thank you! Roz 1% better 💪",
     "🔥 Keep going, aaj ka 1% done?",
@@ -21,58 +28,125 @@ REPLIES = [
 ]
 
 
-def load_state():
-    if os.path.exists(STATE):
-        with open(STATE, encoding="utf-8") as f:
+def load(path, default):
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
-    return {"next": 0, "replied": [], "posted": []}
+    return default
 
 
-def save_state(s):
-    s["replied"] = s["replied"][-2000:]
-    with open(STATE, "w", encoding="utf-8") as f:
-        json.dump(s, f, ensure_ascii=False, indent=1)
+def save(path, data):
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
 
 
-def client():
-    from instagram import IG
-    return IG(os.environ["IG_USER_ID"], os.environ["IG_TOKEN"])
+def state():
+    s = load(STATE, {})
+    s.setdefault("used", [])
+    s.setdefault("replied", [])
+    s.setdefault("posted", [])
+    s.setdefault("counter", 0)
+    return s
 
 
-def caption_for(reel):
-    lines = [reel["title"], ""]
-    lines += [f"👉 {sc['text']}" for sc in reel["scenes"]]
-    lines += ["", "Save karo, share karo, aur roz 1% better bano. Follow @dailyrise.reels", "", HASHTAGS]
-    return "\n".join(lines)
+def next_slot(after):
+    day = after.date()
+    for _ in range(400):
+        for hh, mm in SLOTS:
+            cand = datetime(day.year, day.month, day.day, hh, mm, tzinfo=IST)
+            if cand > after:
+                return cand
+        day += timedelta(days=1)
+    raise RuntimeError("no slot")
 
 
-def post_next():
+def gh(*args):
+    subprocess.run(["gh", *args], check=True)
+
+
+def batch():
+    import ideas
     import render
-    with open("scripts.json", encoding="utf-8") as f:
-        reels = json.load(f)
-    s = load_state()
-    idx = s["next"] % len(reels)
-    reel = reels[idx]
-    os.makedirs("out", exist_ok=True)
-    path = os.path.join("out", f"reel_{idx:02d}.mp4")
-    dur = render.render(reel, path)
-    print(f"Rendered reel {idx}: {reel['title']} ({dur:.1f}s)")
-    if os.environ.get("DRY_RUN"):
-        print("DRY_RUN set, not posting")
+    import seo
+    s, q = state(), load(QUEUE, [])
+    room = max(0, MAX_QUEUE - len(q))
+    n = min(BATCH_SIZE, room)
+    print(f"queue has {len(q)}, making {n} new reels (cap {MAX_QUEUE})")
+    if n == 0:
         return
-    media_id = client().publish_reel(path, caption_for(reel))
-    print(f"Posted reel {idx}, media id {media_id}")
-    s["next"] = idx + 1
-    s["posted"].append({"idx": idx, "media": media_id})
-    save_state(s)
+    used = set(s["used"])
+    rnd = random.Random()
+    last = q[-1]["template"] if q else None
+    after = max([datetime.fromisoformat(e["slot"]) for e in q] + [datetime.now(IST)])
+    os.makedirs("out", exist_ok=True)
+    for _ in range(n):
+        reel = ideas.new_reel(used, rnd, last)
+        last = reel["template"]
+        s["counter"] += 1
+        name = f"reel_{s['counter']:05d}.mp4"
+        path = os.path.join("out", name)
+        render.render(reel, path, seed=s["counter"])
+        if not os.environ.get("NO_UPLOAD"):
+            gh("release", "upload", RELEASE, path, "--clobber")
+        after = next_slot(after)
+        q.append({"file": name, "slot": after.isoformat(), "template": reel["template"], "key": reel["key"],
+                  "caption": seo.caption(reel)})
+        s["used"] = sorted(used)
+        save(QUEUE, q)
+        save(STATE, s)
+        print(f"{name}  {reel['template']:8s}  {after:%d %b %H:%M} IST  {reel['caption']}")
+
+
+def post():
+    from instagram import IG
+    s, q = state(), load(QUEUE, [])
+    now = datetime.now(IST)
+    due = [e for e in q if datetime.fromisoformat(e["slot"]) <= now + timedelta(minutes=45)]
+    if not due:
+        print("nothing due now; queue size", len(q))
+        return
+    e = min(due, key=lambda x: x["slot"])
+    os.makedirs("out", exist_ok=True)
+    gh("release", "download", RELEASE, "-p", e["file"], "-D", "out", "--clobber")
+    ig = IG(os.environ["IG_USER_ID"], os.environ["IG_TOKEN"])
+    media_id = ig.publish_reel(os.path.join("out", e["file"]), e["caption"])
+    print(f"posted {e['file']} ({e['key']}) -> {media_id}")
+    q.remove(e)
+    s["posted"].append({"file": e["file"], "key": e["key"], "media": media_id, "at": now.isoformat()})
+    save(QUEUE, q)
+    save(STATE, s)
+    subprocess.run(["gh", "release", "delete-asset", RELEASE, e["file"], "-y"], check=False)
 
 
 def comments():
-    s = load_state()
-    n = client().reply_to_comments(s["replied"], REPLIES)
-    print(f"Replied to {n} comments")
-    save_state(s)
+    from instagram import IG
+    s = state()
+    n = IG(os.environ["IG_USER_ID"], os.environ["IG_TOKEN"]).reply_to_comments(s["replied"], REPLIES)
+    s["replied"] = s["replied"][-3000:]
+    save(STATE, s)
+    print(f"replied to {n} comments")
+
+
+def preview(n):
+    import ideas
+    import render
+    import seo
+    used, rnd, last = set(), random.Random(42), None
+    os.makedirs("out", exist_ok=True)
+    for i in range(n):
+        reel = ideas.new_reel(used, rnd, last)
+        last = reel["template"]
+        render.render(reel, f"out/preview_{i}.mp4", seed=i)
+        print(f"--- preview_{i}.mp4 [{reel['template']}]\n{seo.caption(reel)}\n")
 
 
 if __name__ == "__main__":
-    comments() if "--comments" in sys.argv else post_next()
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "post"
+    if cmd == "batch":
+        batch()
+    elif cmd == "comments":
+        comments()
+    elif cmd == "preview":
+        preview(int(sys.argv[2]) if len(sys.argv) > 2 else 3)
+    else:
+        post()
