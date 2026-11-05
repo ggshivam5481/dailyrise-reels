@@ -29,9 +29,10 @@ class IG:
     def username(self):
         return self.get(self.uid, fields="username")["username"]
 
-    def publish_reel(self, video_path, caption):
+    def publish_reel(self, video_path, caption, thumb_offset=None):
         c = self.post(f"{self.uid}/media", media_type="REELS", upload_type="resumable",
-                      caption=caption, share_to_feed="true")
+                      caption=caption, share_to_feed="true",
+                      **({"thumb_offset": str(thumb_offset)} if thumb_offset is not None else {}))
         cid = c["id"]
         size = os.path.getsize(video_path)
         with open(video_path, "rb") as f:

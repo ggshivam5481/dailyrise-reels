@@ -108,8 +108,12 @@ def post():
     e = min(due, key=lambda x: x["slot"])
     os.makedirs("out", exist_ok=True)
     gh("release", "download", RELEASE, "-p", e["file"], "-D", "out", "--clobber")
+    import cover
+    src = os.path.join("out", e["file"])
+    final = os.path.join("out", "final_" + e["file"])
+    thumb = cover.add_cover(src, e["caption"], final)
     ig = IG(os.environ["IG_USER_ID"], os.environ["IG_TOKEN"])
-    media_id = ig.publish_reel(os.path.join("out", e["file"]), e["caption"])
+    media_id = ig.publish_reel(final, e["caption"], thumb_offset=thumb)
     print(f"posted {e['file']} ({e['key']}) -> {media_id}")
     q.remove(e)
     s["posted"].append({"file": e["file"], "key": e["key"], "media": media_id, "at": now.isoformat()})
