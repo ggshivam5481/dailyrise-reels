@@ -1,6 +1,27 @@
 {
- "used": [],
+ "used": [
+  "duel|13|9",
+  "duel|31|0",
+  "duel|3|4",
+  "failstairs|0|0|DREAM",
+  "failstairs|4|3|DREAM",
+  "failstairs|7|4|DREAM",
+  "failstairs|8|4|GOAL",
+  "kills|b|GRATITUDE/ROUTINE/SLEEP/EFFORT/SILENCE/CALM",
+  "kills|k|EGO/LATE NIGHTS/ANGER/OVERTHINKING/NOISE/DEBT",
+  "kills|k|LATE NIGHTS/BLAME/SHORTCUTS/COMFORT/SUGAR/DOUBT",
+  "kills|k|REGRET/OVERTHINKING/BLAME/SNOOZE/COMPARISON/DEBT",
+  "kills|k|SCROLLING/COMFORT/SUGAR/DEBT/GOSSIP/COMPARISON",
+  "split|12|0",
+  "split|15|0",
+  "split|16|5",
+  "split|20|1",
+  "stack|neg|1|NOT TODAY|clock",
+  "tiers|7|90%|hoop|100 FOLLOWERS",
+  "tiers|8|95%|bell|FIRST 1 LAKH",
+  "tiers|9|95%|goal|FLUENT ENGLISH"
+ ],
  "replied": [],
  "posted": [],
- "counter": 35
+ "counter": 55
 }
