@@ -22,11 +22,11 @@ MAX_QUEUE = int(os.environ.get("MAX_QUEUE", "100000"))  # no practical limit
 RELEASE = "queue"
 STATE, QUEUE = "state.json", "queue.json"
 REPLIES = [
-    "Thank you! Roz 1% better 💪",
-    "🔥 Keep going, aaj ka 1% done?",
-    "Bilkul sahi! Consistency is key 🙌",
-    "Shukriya ❤️ Roz naya reel aata hai, follow karte raho",
-    "💯 Chhote kadam, badi jeet!",
+    "Thank you! 1% better every day.",
+    "Keep going. Did you get your 1% today?",
+    "Exactly. Consistency is everything.",
+    "Glad it helped. A new reel drops every day.",
+    "Small steps, big wins.",
 ]
 
 

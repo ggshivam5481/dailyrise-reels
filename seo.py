@@ -22,7 +22,7 @@ TOPIC = {
     "leap": {"kw": "comfort zone se bahar nikal kar risk lene ki motivation",
              "tags": ["#comfortzone", "#takerisks", "#believeinyourself", "#growth", "#courage"]},
 }
-GENERAL = ["#motivation", "#hindimotivation", "#motivationinhindi", "#selfimprovement", "#stickmananimation",
+GENERAL = ["#motivation", "#dailymotivation", "#motivationalquotes", "#selfimprovement", "#stickmananimation",
            "#motivationalreels", "#successmindset", "#reelsindia"]
 HOOKS = ["{c}", "{c} 🔥", "{c}... 💭", "{c} 👀"]
 CTAS = [
@@ -58,24 +58,24 @@ def caption(reel, rnd=None):
 
 # ---------------- captions for the minimal (nv) formats ----------------
 NV_TOPIC = {
-    "discipline": ("discipline, self control aur roz kaam karne ki aadat",
+    "discipline": ("discipline, self control and showing up every day",
                    ["#discipline", "#selfdiscipline", "#consistency", "#nevergiveup"]),
-    "habits": ("daily habits, chhote kadam aur 1% better every day",
+    "habits": ("daily habits, small steps and getting 1% better every day",
                ["#dailyhabits", "#atomichabits", "#1percentbetter", "#habits"]),
-    "mindset": ("success mindset, soch badlo zindagi badlegi",
+    "mindset": ("success mindset: change your thoughts, change your life",
                 ["#mindset", "#growthmindset", "#mindsetshift", "#successmindset"]),
-    "money": ("paisa, time aur life ki asli value",
+    "money": ("money, time and the real value of life",
               ["#moneymindset", "#financialfreedom", "#wealthmindset", "#lifelessons"]),
-    "focus": ("focus, phone addiction aur distraction se bahar nikalna",
+    "focus": ("focus, phone addiction and beating distraction",
               ["#focus", "#deepwork", "#productivity", "#digitaldetox"]),
-    "time": ("time ki value aur procrastination chhodna",
+    "time": ("the value of time and beating procrastination",
              ["#timemanagement", "#procrastination", "#timeiseverything", "#productivity"]),
-    "fear": ("dar, overthinking aur comfort zone se bahar nikalna",
+    "fear": ("fear, overthinking and leaving your comfort zone",
              ["#overthinking", "#comfortzone", "#courage", "#takeaction"]),
-    "growth": ("self improvement aur roz thoda better banna",
+    "growth": ("self improvement and becoming a little better every day",
                ["#selfimprovement", "#personalgrowth", "#selfgrowth", "#levelup"]),
 }
-NV_GENERAL = ["#motivation", "#hindimotivation", "#motivationinhindi", "#stickmananimation", "#reelsindia",
+NV_GENERAL = ["#motivation", "#dailymotivation", "#motivationalquotes", "#stickmananimation", "#reelsindia",
               "#motivationalreels", "#wisdom"]
 
 
@@ -105,10 +105,10 @@ def caption_v2(spec, rnd=None):
     rnd = rnd or random.Random(spec.get("key", ""))
     topic = spec.get("topic") if spec.get("topic") in G.HASHTAGS else "growth"
     kw = NV_TOPIC.get(topic, NV_TOPIC["growth"])[0]
-    kw = "Daily motivation in Hindi: " + kw if rnd.random() < 0.5 else kw[0].upper() + kw[1:]
+    kw = "Daily motivation: " + kw if rnd.random() < 0.5 else kw[0].upper() + kw[1:]
     tags = G.HASHTAGS[topic]
     tags = rnd.sample(tags[:2], 1) + rnd.sample(tags[2:6], 2) + rnd.sample(tags[6:], 2)
     title = (spec.get("caption_line") or spec.get("punch") or spec.get("top") or "").strip()
     return rnd.choice(G.CAPTION_TEMPLATES).format(
-        kw=kw, title=title, ig=spec.get("ig", ""), question=rnd.choice(G.QUESTIONS[topic]),
+        kw=kw, title=title, ig=spec.get("ig_en") or spec.get("metaphor") or "", question=rnd.choice(G.QUESTIONS[topic]),
         day=spec.get("day", 1), tags=" ".join(tags))
