@@ -66,13 +66,14 @@ def gh(*args):
     subprocess.run(["gh", *args], check=True)
 
 
-FORMAT_WEIGHTS = {"duel": 4, "split": 3, "stack": 2, "tiers": 2, "failstairs": 1, "kills": 1}
+FORMAT_WEIGHTS = {"montage": 1}  # the viral metaphor-montage style only (older formats kept in code)
 
 
 def formats():
     import formats_a
     import formats_b
-    return {**formats_a.FORMATS, **formats_b.FORMATS}
+    import formats_c
+    return {**formats_a.FORMATS, **formats_b.FORMATS, **formats_c.FORMATS}
 
 
 def _script_key(spec):
@@ -83,7 +84,7 @@ def make_spec(F, used, rnd, last):
     """Weighted format choice; a format whose scripts are all used is skipped, so no script repeats."""
     import hooks
     import nv
-    names = [n for n in FORMAT_WEIGHTS if n in F and n != last] or list(F)
+    names = [n for n in FORMAT_WEIGHTS if n in F and n != last] or [n for n in FORMAT_WEIGHTS if n in F]
     spec = None
     while names:
         name = rnd.choices(names, weights=[FORMAT_WEIGHTS.get(n, 1) for n in names])[0]

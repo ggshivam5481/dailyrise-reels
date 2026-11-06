@@ -451,26 +451,25 @@ def _scaled_mask(s, px, scale):
 
 
 def draw_hook(img, t, text, style, kicker=None):
-    """Big catchy hook over the dimmed, zooming opening scene. Returns new image."""
+    """End card that is also the reel cover: glowing scene, big title, accent words on colour pills."""
     if t >= HOOK_DUR:
         return img
-    fade = 1.0
-    img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.6 * fade)
-    d = ImageDraw.Draw(img)
+    img = Image.blend(img, Image.new("RGB", (W, H), (0, 0, 0)), 0.32)
     toks = _hook_tokens(text)
-    px = 58 if len(" ".join(w for w, _ in toks)) < 22 else (50 if len(" ".join(w for w, _ in toks)) < 34 else 42)
+    n = len(" ".join(w for w, _ in toks))
+    px = 74 if n < 18 else (64 if n < 30 else 54)
     lines, cur, curw = [], [], 0
     for w_, acc in toks:
-        ww = text_mask(w_, px).width + px
-        if cur and curw + ww > 960:
+        ww = text_mask(w_, px).width + px * 0.7
+        if cur and curw + ww > 900:
             lines.append(cur)
             cur, curw = [], 0
         cur.append((w_, acc))
         curw += ww
     if cur:
         lines.append(cur)
-    lh = px * 1.75
-    y0 = 880 - len(lines) * lh / 2
+    lh = px * 1.9
+    y0 = 900 - len(lines) * lh / 2
     scale = 1.0
     if style == "slide":
         y0 += 180 * (1 - ease(t / 0.35))
@@ -481,24 +480,26 @@ def draw_hook(img, t, text, style, kicker=None):
     shake = 0
     if style in ("shake", "glitch") and t < 0.4:
         shake = math.sin(t * 90) * 20 * (1 - t / 0.4)
+    # soft dark panel behind the title for contrast
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(ov)
+    od.rounded_rectangle([60, y0 - 150, W - 60, y0 + len(lines) * lh + 90], 40, fill=(0, 0, 0, 120))
+    img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+    d = ImageDraw.Draw(img)
+    # top badge
+    badge = (kicker or "DAILY 1% BETTER").upper()
+    bm = text_mask(badge, 24)
+    bx, by = W / 2 - bm.width / 2, y0 - 110
+    d.rounded_rectangle([bx - 22, by - 14, bx + bm.width + 22, by + bm.height + 14], 22, fill=T["accent"])
+    img.paste((14, 14, 18), (int(bx), int(by)), bm)
     nwords = sum(len(l) for l in lines)
     total_chars = sum(len(w_) for l in lines for w_, _ in l)
     shown_words = nwords if style != "pop" else int(clamp(t / 0.6) * nwords) + 1
     shown_chars = total_chars if style != "type" else int(clamp(t / 0.7) * total_chars) + 1
-    # accent bar behind the hook for punch
-    bar_w = 980 * ease(t / 0.25)
-    bar_col = mix((0, 0, 0), mix(T["bg_top"], (0, 0, 0), 0.2), fade)
-    d.rectangle([W / 2 - bar_w / 2, y0 - 40, W / 2 + bar_w / 2, y0 + len(lines) * lh + 10], fill=bar_col)
-    d.rectangle([W / 2 - bar_w / 2, y0 - 40, W / 2 + bar_w / 2, y0 - 34], fill=mix((0, 0, 0), T["accent"], fade))
-    if kicker:
-        km = text_mask(kicker, 26)
-        kc = mix((0, 0, 0), T["accent"], fade * (0.6 + 0.4 * math.sin(t * 12) ** 2))
-        img.paste(kc, (int(W / 2 - km.width / 2), int(y0 - 100)), km)
-    k = 0
-    chars = 0
+    k = chars = 0
     for li, line in enumerate(lines):
         masks = [_scaled_mask(w_, px, scale) for w_, _ in line]
-        gap = px * 0.6 * scale
+        gap = px * 0.7 * scale
         x = W / 2 - (sum(m.width for m in masks) + gap * (len(line) - 1)) / 2 + shake
         yy = y0 + li * lh - (masks[0].height - text_mask(line[0][0], px).height) / 2
         for (w_, acc), m in zip(line, masks):
@@ -511,13 +512,18 @@ def draw_hook(img, t, text, style, kicker=None):
                     break
                 m = text_mask(w_[:left], px)
             chars += len(w_)
-            col = T["accent"] if acc else WHITE
-            col = mix((0, 0, 0), col, fade)
-            if style == "glitch" and t < 0.5:
-                img.paste(mix((0, 0, 0), (255, 40, 80), fade), (int(x - 8), int(yy)), m)
-                img.paste(mix((0, 0, 0), (40, 220, 255), fade), (int(x + 8), int(yy)), m)
-            img.paste(col, (int(x), int(yy)), m)
+            if acc:  # accent word: dark text on a bright pill
+                d.rounded_rectangle([x - 14, yy - 12, x + m.width + 14, yy + m.height + 12], 14, fill=T["accent"])
+                img.paste((12, 12, 16), (int(x), int(yy)), m)
+            else:
+                img.paste((0, 0, 0), (int(x + 4), int(yy + 5)), m)
+                if style == "glitch" and t < 0.5:
+                    img.paste((255, 40, 80), (int(x - 8), int(yy)), m)
+                    img.paste((40, 220, 255), (int(x + 8), int(yy)), m)
+                img.paste(WHITE, (int(x), int(yy)), m)
             x += m.width + gap
+    hm = text_mask(HANDLE, 22)
+    img.paste(mix(SUB, T["accent2"], 0.4), (int(W / 2 - hm.width / 2), int(y0 + len(lines) * lh + 30)), hm)
     if style in ("flash", "zoom", "drop") and t < 0.15:
         img = Image.blend(img, Image.new("RGB", (W, H), (255, 255, 255)), 0.6 * (1 - t / 0.15))
     return img
