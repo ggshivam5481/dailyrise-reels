@@ -97,3 +97,18 @@ def caption_nv(spec, rnd=None):
     ]
     out = [l for i, l in enumerate(lines) if l or (i and lines[i - 1])]
     return chr(10).join(out)
+
+
+def caption_v2(spec, rnd=None):
+    """SEO caption: keyword-rich first line, Hinglish line, comment-bait question, series follow CTA, 5 tags."""
+    import growth_copy as G
+    rnd = rnd or random.Random(spec.get("key", ""))
+    topic = spec.get("topic") if spec.get("topic") in G.HASHTAGS else "growth"
+    kw = NV_TOPIC.get(topic, NV_TOPIC["growth"])[0]
+    kw = "Daily motivation in Hindi: " + kw if rnd.random() < 0.5 else kw[0].upper() + kw[1:]
+    tags = G.HASHTAGS[topic]
+    tags = rnd.sample(tags[:2], 1) + rnd.sample(tags[2:6], 2) + rnd.sample(tags[6:], 2)
+    title = (spec.get("caption_line") or spec.get("punch") or spec.get("top") or "").strip()
+    return rnd.choice(G.CAPTION_TEMPLATES).format(
+        kw=kw, title=title, ig=spec.get("ig", ""), question=rnd.choice(G.QUESTIONS[topic]),
+        day=spec.get("day", 1), tags=" ".join(tags))

@@ -664,6 +664,137 @@ def confetti_burst(img, t, at, seed):
     return img
 
 
+OPEN_DUR = 2.2
+
+
+def _layout_words(toks, px, max_w=900):
+    lines, cur, curw = [], [], 0
+    for w_, acc in toks:
+        ww = text_mask(w_, px).width + px * 0.7
+        if cur and curw + ww > max_w:
+            lines.append(cur)
+            cur, curw = [], 0
+        cur.append((w_, acc))
+        curw += ww
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def draw_open_hook(img, t, text):
+    """Big hook over the running animation for the first OPEN_DUR seconds (no dimming, no delay)."""
+    if t >= OPEN_DUR:
+        return img
+    toks = _hook_tokens(text)
+    n = len(" ".join(w for w, _ in toks))
+    px = 72 if n < 18 else (64 if n < 30 else 56)
+    lines = _layout_words(toks, px)
+    lh = px * 1.9
+    exit_k = ease(clamp((t - 1.75) / 0.35))
+    scale = 1 - 0.35 * exit_k
+    alpha = 1 - clamp(exit_k * 1.4)
+    if alpha <= 0:
+        return img
+    y_center = 700 - 220 * exit_k
+    block_h = len(lines) * lh
+    y0 = y_center - block_h / 2
+    nwords = sum(len(l) for l in lines)
+    shown = int(clamp(t / 0.45) * nwords) + 1
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(ov)
+    pad_x = 470 * scale + 40
+    od.rounded_rectangle([W / 2 - pad_x, y0 - 40 * scale, W / 2 + pad_x, y0 + block_h * scale + 20],
+                         int(36 * scale) + 4, fill=(0, 0, 0, int(130 * alpha)))
+    img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+    d = ImageDraw.Draw(img)
+    k = 0
+    for li, line in enumerate(lines):
+        masks = []
+        for w_, _ in line:
+            m = text_mask(w_, px)
+            if scale < 0.99:
+                m = m.resize((max(1, int(m.width * scale)), max(1, int(m.height * scale))), Image.NEAREST)
+            masks.append(m)
+        gap = px * 0.7 * scale
+        x = W / 2 - (sum(m.width for m in masks) + gap * (len(line) - 1)) / 2
+        yy = y0 + li * lh * scale
+        for (w_, acc), m in zip(line, masks):
+            k += 1
+            if k > shown:
+                break
+            pop = 1.0
+            wt = t - (k - 1) * 0.45 / max(1, nwords)
+            if 0 <= wt < 0.12:
+                pop = 1 + 0.25 * (1 - wt / 0.12)
+            mm = m if pop == 1.0 else m.resize((max(1, int(m.width * pop)), max(1, int(m.height * pop))), Image.NEAREST)
+            ox, oy = (mm.width - m.width) / 2, (mm.height - m.height) / 2
+            if acc:
+                d.rounded_rectangle([x - 14 - ox, yy - 12 - oy, x + m.width + 14 + ox, yy + m.height + 12 + oy],
+                                    14, fill=mix((0, 0, 0), T["accent"], alpha))
+                img.paste(mix((0, 0, 0), (12, 12, 16), alpha), (int(x - ox), int(yy - oy)), mm)
+            else:
+                img.paste((0, 0, 0), (int(x - ox + 4), int(yy - oy + 5)), mm)
+                img.paste(mix((0, 0, 0), WHITE, alpha), (int(x - ox), int(yy - oy)), mm)
+            x += m.width + gap
+    return img
+
+
+def day_badge(img, day):
+    if not day:
+        return img
+    s_ = f"DAY {int(day)} / 365"
+    m = text_mask(s_, 20)
+    d = ImageDraw.Draw(img)
+    x, y = 60, 120
+    d.rounded_rectangle([x - 16, y - 12, x + m.width + 16, y + m.height + 12], 18, fill=T["accent"])
+    img.paste((14, 14, 18), (x, y), m)
+    return img
+
+
+def follow_cta(img, a, text):
+    """Animated follow button; a = seconds since the CTA started (lasts ~2.2 s)."""
+    slide = ease(clamp(a / 0.35))
+    y = 1480 + 260 * (1 - slide)
+    d = ImageDraw.Draw(img)
+    if text:
+        toks = _hook_tokens(text)
+        widths = [text_mask(w_, 30).width for w_, _ in toks]
+        gap = 20
+        x = W / 2 - (sum(widths) + gap * (len(toks) - 1)) / 2
+        ty = y - 92
+        for (w_, acc), ww in zip(toks, widths):
+            m = text_mask(w_, 30)
+            if acc:
+                d.rounded_rectangle([x - 10, ty - 8, x + ww + 10, ty + m.height + 8], 10, fill=T["accent"])
+                img.paste((12, 12, 16), (int(x), int(ty)), m)
+            else:
+                img.paste((0, 0, 0), (int(x + 3), int(ty + 4)), m)
+                img.paste(WHITE, (int(x), int(ty)), m)
+            x += ww + gap
+    tapped = a >= 0.95
+    pulse = 1.0
+    if 0.8 <= a < 1.1:
+        pulse = 1 - 0.12 * math.sin((a - 0.8) / 0.3 * math.pi)
+    label = "FOLLOWING" if tapped else "FOLLOW"
+    m = text_mask(label, 30)
+    bw, bh = (m.width + 130) * pulse, 84 * pulse
+    bx, by = W / 2 - bw / 2, y - bh / 2 + 20
+    fill = mix(T["accent"], (255, 255, 255), 0.15) if tapped else (245, 245, 248)
+    d.rounded_rectangle([bx, by, bx + bw, by + bh], int(bh / 2), fill=fill)
+    ix, iy = bx + 42 * pulse, by + bh / 2
+    if tapped:
+        d.line([(ix - 12, iy), (ix - 3, iy + 10), (ix + 14, iy - 10)], fill=(14, 14, 18), width=6)
+    else:
+        d.line([(ix - 13, iy), (ix + 13, iy)], fill=(14, 14, 18), width=6)
+        d.line([(ix, iy - 13), (ix, iy + 13)], fill=(14, 14, 18), width=6)
+    img.paste((14, 14, 18), (int(ix + 30 * pulse), int(iy - m.height / 2)), m)
+    if 0.75 <= a < 1.25:  # finger tap ring
+        r = 20 + 60 * (a - 0.75) / 0.5
+        d.ellipse([W / 2 + bw / 2 - 60 - r, iy - r, W / 2 + bw / 2 - 60 + r, iy + r],
+                  outline=mix((0, 0, 0), WHITE, 1 - (a - 0.75) / 0.5), width=4)
+    return img
+
+
 def render(spec, draw, events, out_path, seed=0):
     """spec: dict with dur, top, punch, punch_at, hook, hook_style, theme.
     draw(c, t, spec): draws the scene. events: (t, kind[, gain]) for audio.
@@ -685,10 +816,16 @@ def render(spec, draw, events, out_path, seed=0):
     if hook:
         ev += [(end_t + e[0], e[1], e[2]) for e in hook_sfx(style, len(hook.split())) if e[2] > 0]
     ev += [(0.0, "impact", 0.8), (0.0, "whoosh", 0.7), (0.05, "pop", 0.5)]  # start straight into the action
+    open_hook = spec.get("open_hook")
+    if open_hook:
+        nw = len(open_hook.split())
+        ev += [(i * 0.45 / max(1, nw), "pop", 0.6) for i in range(nw)] + [(1.85, "whoosh", 0.6)]
+    follow_text = spec.get("follow_cta")
+    cta_t = story - 2.2
+    ev += [(cta_t, "whoosh", 0.5), (cta_t + 0.95, "pop", 0.8), (cta_t + 0.97, "chime", 0.7)]
     if spec.get("punch"):
         ev += [(punch_t - 1.0, "riser", 0.7), (punch_t, "impact", 0.9), (punch_t, "flash", 0.7),
                (punch_t + 0.1, "chime", 0.6)]
-    ev += [(story - 1.4, "chime", 0.6)]
     beats = _beat_times(ev)
     shakes = [(e[0], 0.25 + 0.6 * e[2]) for e in ev if e[1] in ("impact", "thud", "snap") and e[0] > 0.1]
     wav = out_path + ".wav"
@@ -698,7 +835,7 @@ def render(spec, draw, events, out_path, seed=0):
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-shortest",
            "-movflags", "+faststart", out_path]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    top_from = 0
+    top_from = 2.15 if open_hook else 0
     for fi in range(int(dur * FPS)):
         t = fi / FPS
         st = min(t, story - 1 / FPS)  # story time; frozen on the last story frame under the end card
@@ -715,8 +852,6 @@ def render(spec, draw, events, out_path, seed=0):
             k = clamp((t - punch_t) / 0.22)
             px = int(30 + 14 * (1 - ease(k)))  # slam in big, settle
             c.lines(spec["punch"], W / 2, y + PUNCH_GAP, px, spec.get("punch_color", T["accent"]))
-        if story - 1.4 < t < story:
-            c.text("FOLLOW FOR DAILY 1% BETTER", W / 2, 1560, 20, mix(SUB, T["accent2"], 0.5))
         img = c.finish(t)
         img = ripples(img, t, beats, seed)
         img = light_sweep(img, t)
@@ -725,8 +860,13 @@ def render(spec, draw, events, out_path, seed=0):
             img = confetti_burst(img, t, punch_t, seed)
         img = camera(img, st, story, shakes, punch_t)
         img = vignette_pulse(img, t, beats)
+        if open_hook:
+            img = draw_open_hook(img, t, open_hook)
+        if cta_t <= t < story:
+            img = follow_cta(img, t - cta_t, follow_text or "FOLLOW FOR *DAILY* 1% BETTER")
         if hook and t >= end_t:
             img = draw_hook(img, t - end_t, hook, style, kicker)
+        img = day_badge(img, spec.get("day"))
         img = progress_bar(img, t, dur)
         img = watermark(img, t)
         proc.stdin.write(img.tobytes())

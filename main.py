@@ -105,6 +105,12 @@ def make_spec(F, used, rnd, last):
     used.add(_script_key(spec))
     spec["format"] = name
     spec["hook"], spec["hook_style"] = hooks.pick(rnd, used, spec.get("topic"))
+    import growth_copy as G
+    pool = G.OPENING_HOOKS.get(spec.get("topic"), G.OPENING_HOOKS["growth"])
+    fresh = [h for h in pool if "open|" + h not in used] or pool
+    spec["open_hook"] = rnd.choice(fresh)
+    used.add("open|" + spec["open_hook"])
+    spec["follow_cta"] = rnd.choice(G.FOLLOW_CTAS)
     last_theme = getattr(make_spec, "last_theme", None)
     spec["theme"] = rnd.choice([th["name"] for th in nv.THEMES if th["name"] != last_theme])
     make_spec.last_theme = spec["theme"]
@@ -112,6 +118,7 @@ def make_spec(F, used, rnd, last):
 
 
 # 6 AM = start-the-day energy, 6 PM = end-of-day reflection
+SERIES_START = datetime(2026, 11, 6, tzinfo=IST).date()  # "Day N of becoming 1% better"
 MORNING_TOPICS = {"discipline", "habits", "focus", "growth"}
 
 
@@ -171,6 +178,8 @@ def batch():
             used.clear()
             used.update(snapshot)
         last = spec["format"]
+        spec["day"] = (slot.date() - SERIES_START).days + 1
+        spec["follow_cta"] = spec.get("follow_cta", "").replace("{next}", str(spec["day"] + 1))
         s["counter"] += 1
         name = f"reel_{s['counter']:05d}.mp4"
         path = os.path.join("out", name)
@@ -180,7 +189,7 @@ def batch():
             gh("release", "upload", RELEASE, path, "--clobber")
         after = slot
         q.append({"file": name, "slot": after.isoformat(), "template": spec["format"], "key": spec["key"],
-                  "topic": spec.get("topic"), "thumb": thumb, "caption": seo.caption_nv(spec)})
+                  "topic": spec.get("topic"), "thumb": thumb, "caption": seo.caption_v2(spec)})
         s["used"] = sorted(used)
         save(QUEUE, q)
         save(STATE, s)
