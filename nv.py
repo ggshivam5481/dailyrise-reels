@@ -840,7 +840,8 @@ def render(spec, draw, events, out_path, seed=0):
         t = fi / FPS
         st = min(t, story - 1 / FPS)  # story time; frozen on the last story frame under the end card
         c = Canvas()
-        c.particles(t)
+        if not spec.get("gh"):
+            c.particles(t)
         draw(c, st, spec)
         y = TOP_Y
         top = spec.get("top")
@@ -853,9 +854,10 @@ def render(spec, draw, events, out_path, seed=0):
             px = int(30 + 14 * (1 - ease(k)))  # slam in big, settle
             c.lines(spec["punch"], W / 2, y + PUNCH_GAP, px, spec.get("punch_color", T["accent"]))
         img = c.finish(t)
-        img = ripples(img, t, beats, seed)
-        img = light_sweep(img, t)
-        img = shooting_stars(img, t, seed)
+        if not spec.get("gh"):  # the room style keeps a clean, calm look
+            img = ripples(img, t, beats, seed)
+            img = light_sweep(img, t)
+            img = shooting_stars(img, t, seed)
         if spec.get("punch"):
             img = confetti_burst(img, t, punch_t, seed)
         img = camera(img, st, story, shakes, punch_t)

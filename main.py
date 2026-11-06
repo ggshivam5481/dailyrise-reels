@@ -66,14 +66,15 @@ def gh(*args):
     subprocess.run(["gh", *args], check=True)
 
 
-FORMAT_WEIGHTS = {"montage": 1}  # the viral metaphor-montage style only (older formats kept in code)
+FORMAT_WEIGHTS = {"lifeline": 1}  # grindhallway-style night-room stories
 
 
 def formats():
     import formats_a
     import formats_b
     import formats_c
-    return {**formats_a.FORMATS, **formats_b.FORMATS, **formats_c.FORMATS}
+    import formats_g
+    return {**formats_a.FORMATS, **formats_b.FORMATS, **formats_c.FORMATS, **formats_g.FORMATS}
 
 
 def _script_key(spec):
