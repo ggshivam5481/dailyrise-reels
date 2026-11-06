@@ -6,7 +6,7 @@ stays above nv.FLOOR (1240); nv paints its own floor + soft reflection below tha
 import glob
 import math
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 import nv
 
@@ -390,3 +390,60 @@ def lie_floor(t):
 def game(t):
     k = math.sin(t * 12)
     return dict(nv.BASE, head=-14, ll1=-10, rl1=10, la1=40 + 3 * k, la2=70, ra1=46 - 3 * k, ra2=66)
+
+
+# ---------------- extras for split / table layouts ----------------
+def no_reflection(c):
+    """Swap nv's glossy-floor pass for this canvas only (layouts that draw content below nv.FLOOR)."""
+    def _finish(t=0.0, handle_xy=None):
+        img = c.img
+        for item in c.ui:
+            if item[0] != "__bubble__":
+                c._draw_text(*item)
+        small = img.resize((W // 4, H // 4)).filter(ImageFilter.GaussianBlur(5))
+        small = small.point(lambda v: int(max(0, v - 80) * 1.5))
+        return ImageChops.screen(img, small.resize((W, H), Image.BILINEAR))
+    c.finish = _finish
+
+
+def navy_fill(img):
+    g = Image.linear_gradient("L").resize((W, H))
+    top, bot = (6, 9, 22), (14, 22, 50)
+    img.paste(Image.merge("RGB", [g.point(lambda v, i=i: int(top[i] + (bot[i] - top[i]) * v / 255))
+                                  for i in range(3)]), (0, 0))
+
+
+def bed(img, d, x0=400, x1=760):
+    """Bed on the floor; returns the y the sleeper lies on."""
+    top = FOOT - 70
+    d.rounded_rectangle([x0, top, x1, FOOT - 6], 14, fill=NAVY2, outline=LINE_DIM, width=3)
+    d.rounded_rectangle([x0 + 6, top - 18, x1 - 6, top + 16], 12, fill=(40, 90, 210), outline=LINE, width=2)
+    d.rounded_rectangle([x0 + 14, top - 34, x0 + 110, top - 6], 12, fill=(220, 228, 245))
+    d.rectangle([x0, top - 120, x0 + 18, FOOT - 6], fill=NAVY2, outline=LINE_DIM, width=2)
+    return top - 10
+
+
+def mic(d, x, y, s=1.0):
+    d.line([(x, y), (x + 8 * s, y + 46 * s)], fill=(60, 66, 84), width=max(3, int(7 * s)))
+    d.ellipse([x - 13 * s, y - 16 * s, x + 13 * s, y + 10 * s], fill=(200, 205, 220), outline=(40, 44, 60), width=2)
+
+
+def guitar(d, x, y, s=1.0):
+    d.line([(x - 10 * s, y + 10 * s), (x + 120 * s, y - 70 * s)], fill=(90, 60, 30), width=max(4, int(10 * s)))
+    d.ellipse([x - 70 * s, y - 20 * s, x + 10 * s, y + 52 * s], fill=(200, 120, 50), outline=(80, 40, 10), width=3)
+    d.ellipse([x - 50 * s, y - 2 * s, x - 6 * s, y + 38 * s], fill=(160, 90, 30))
+    d.ellipse([x - 38 * s, y + 6 * s, x - 18 * s, y + 26 * s], fill=(30, 20, 10))
+
+
+def notebook(d, x, y, s=1.0):
+    d.rectangle([x - 34 * s, y - 6 * s, x + 34 * s, y + 6 * s], fill=(245, 242, 230), outline=(40, 44, 70), width=2)
+    d.line([(x, y - 6 * s), (x, y + 6 * s)], fill=(40, 44, 70), width=2)
+
+
+def left_label(d, s, x, y, size=30, fill=TXT):
+    f = font(size)
+    xx = x
+    for ch in s.upper():
+        d.text((xx + 2, y + 3), ch, font=f, fill=(0, 0, 0))
+        d.text((xx, y), ch, font=f, fill=fill)
+        xx += d.textlength(ch, font=f) + 2

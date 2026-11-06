@@ -66,7 +66,7 @@ def gh(*args):
     subprocess.run(["gh", *args], check=True)
 
 
-FORMAT_WEIGHTS = {"lifeline": 1}  # grindhallway-style night-room stories
+FORMAT_WEIGHTS = {"lifeline": 3, "tworooms": 2, "table": 1}  # grindhallway-style night-room stories
 
 
 def formats():
