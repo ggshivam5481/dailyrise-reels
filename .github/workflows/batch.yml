@@ -12,6 +12,9 @@ on:
       count:
         description: "How many reels to make"
         default: "35"
+      auto:
+        description: "1 = automatic trigger (skip if today's batch is already done)"
+        default: "0"
 
 permissions:
   contents: write
@@ -27,6 +30,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       BATCH_SIZE: ${{ inputs.count || '35' }}
+      AUTO: ${{ inputs.auto || '0' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

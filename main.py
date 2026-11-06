@@ -145,7 +145,8 @@ def batch():
     F = formats()
     s, q = state(), reslot(load(QUEUE, []))
     today = datetime.now(IST).date().isoformat()
-    if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and s.get("last_batch") == today:
+    automatic = os.environ.get("GITHUB_EVENT_NAME") == "schedule" or os.environ.get("AUTO") == "1"
+    if automatic and s.get("last_batch") == today:
         print("today's batch is already done; this backup run has nothing to do")
         return
     room = max(0, MAX_QUEUE - len(q))
