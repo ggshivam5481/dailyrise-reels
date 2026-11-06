@@ -2,7 +2,11 @@ name: make-reels
 
 on:
   schedule:
-    - cron: "30 19 * * *"   # 01:00 IST: render the day's batch
+    # GitHub sometimes skips or delays scheduled runs, so try three times a night.
+    # The first run makes the batch; later runs see it is done and exit.
+    - cron: "30 19 * * *"   # 01:00 IST
+    - cron: "30 21 * * *"   # 03:00 IST backup
+    - cron: "45 22 * * *"   # 04:15 IST backup
   workflow_dispatch:
     inputs:
       count:

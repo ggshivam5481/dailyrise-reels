@@ -144,6 +144,10 @@ def batch():
     import seo
     F = formats()
     s, q = state(), reslot(load(QUEUE, []))
+    today = datetime.now(IST).date().isoformat()
+    if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and s.get("last_batch") == today:
+        print("today's batch is already done; this backup run has nothing to do")
+        return
     room = max(0, MAX_QUEUE - len(q))
     n = min(BATCH_SIZE, room)
     print(f"queue has {len(q)}, making {n} new reels (cap {MAX_QUEUE})")
@@ -179,6 +183,8 @@ def batch():
         save(QUEUE, q)
         save(STATE, s)
         print(f"{name}  {spec['format']:10s}  {after:%d %b %H:%M} IST  {spec.get('top')} / {spec.get('punch')}")
+    s["last_batch"] = today
+    save(STATE, s)
 
 
 def post():
