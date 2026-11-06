@@ -225,6 +225,26 @@ def post():
     subprocess.run(["gh", "release", "delete-asset", RELEASE, e["file"], "-y"], check=False)
 
 
+def stats():
+    """Print views/reach/likes for the latest posted reels and the account."""
+    from instagram import IG
+    ig = IG(os.environ["IG_USER_ID"], os.environ["IG_TOKEN"])
+    acc = ig.get(ig.uid, fields="username,followers_count,media_count")
+    print(f"@{acc.get('username')}  followers={acc.get('followers_count')}  posts={acc.get('media_count')}")
+    media = ig.get(f"{ig.uid}/media", fields="id,caption,timestamp,like_count,comments_count,media_product_type",
+                   limit=10).get("data", [])
+    for m in media:
+        row = {"likes": m.get("like_count"), "comments": m.get("comments_count")}
+        for metric in ("views", "reach", "saved", "shares"):
+            try:
+                d = ig.get(f"{m['id']}/insights", metric=metric).get("data", [])
+                row[metric] = d[0]["values"][0]["value"] if d else None
+            except Exception as ex:  # some metrics are not available for every media type
+                row[metric] = "n/a"
+        first = (m.get("caption") or "").splitlines()[0][:50] if m.get("caption") else ""
+        print(m.get("timestamp", "")[:16], m.get("media_product_type"), row, "|", first)
+
+
 def comments():
     from instagram import IG
     s = state()
@@ -255,6 +275,8 @@ if __name__ == "__main__":
         batch()
     elif cmd == "comments":
         comments()
+    elif cmd == "stats":
+        stats()
     elif cmd == "preview":
         preview(int(sys.argv[2]) if len(sys.argv) > 2 else 3)
     else:
